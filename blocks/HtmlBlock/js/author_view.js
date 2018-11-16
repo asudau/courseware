@@ -1,85 +1,84 @@
-define(['assets/js/author_view', 'assets/js/url'],
-       function (AuthorView, helper) {
+import Backbone from 'backbone'
+import jQuery from 'jquery'
+import AuthorView from 'js/author_view'
+import helper from 'js/url'
 
-    'use strict';
+export default AuthorView.extend({
 
-    return AuthorView.extend({
+  events: {
+    'click button[name=save]':   'onSave',
+    'click button[name=cancel]': 'switchBack'
+  },
 
-        events: {
-            "click button[name=save]":   "onSave",
-            "click button[name=cancel]": "switchBack"
+  initialize() {
+    var $section = this.$el.closest('section.HtmlBlock');
+    var $sortingButtons = jQuery('button.lower', $section);
+    $sortingButtons = $sortingButtons.add(jQuery('button.raise', $section));
+    $sortingButtons.addClass('no-sorting');
 
-        },
+    Backbone.on('beforemodeswitch', this.onModeSwitch, this);
+    Backbone.on('beforenavigate', this.onNavigate, this);
+  },
 
-        initialize: function() {
-            var $section = this.$el.closest('section.HtmlBlock');
-            var $sortingButtons = jQuery('button.lower', $section);
-            $sortingButtons = $sortingButtons.add(jQuery('button.raise', $section));
-            $sortingButtons.addClass('no-sorting');
+  onNavigate(event) {
+    if (!jQuery('section .block-content button[name=save]').length) {
+      return;
+    }
+    if (event.isUserInputHandled) {
+      return;
+    }
+    event.isUserInputHandled = true;
+    Backbone.trigger('preventnavigateto', !confirm('Es gibt nicht gespeicherte Änderungen. Möchten Sie die Seite trotzdem verlassen?'));
 
-            Backbone.on('beforemodeswitch', this.onModeSwitch, this);
-	    Backbone.on('beforenavigate', this.onNavigate, this);
-        },
+  },
 
-        onNavigate: function(event){
-	    if(!$("section .block-content button[name=save]").length) return;
-	    if(event.isUserInputHandled) return;
-            event.isUserInputHandled = true;		
-            Backbone.trigger('preventnavigateto', !confirm('Es gibt nicht gespeicherte Änderungen. Möchten Sie die Seite trotzdem verlassen?'));
+  postRender() {
+    this.$('textarea').addToolbar();
+  },
 
-	},
+  // not used yet
+  render() {
+    return this;
+  },
 
-        postRender: function() {
-            this.$("textarea").addToolbar();
-        },
+  onSave(event) {
+    var view = this;
+    var $content = '';
+    var $textarea = this.$('textarea');
+    var wysiwyg_editor = CKEDITOR.instances[$textarea.get(0).id]; 
 
-        // not used yet
-        render: function() {
-            return this;
-        },
+    wysiwyg_editor.setData(STUDIP.wysiwyg.markAsHtml(wysiwyg_editor.getData())); 
+    wysiwyg_editor.updateElement();
+    $content = $textarea.val();
 
-        onSave: function (event) {
-            var textarea = this.$("textarea"),
-                new_val = textarea.val(),
-                view = this;
+    helper
+      .callHandler(this.model.id, 'save', { content: $content })
+      .then(function (success) {
+        jQuery(event.target).addClass('accept');
+        view.switchBack();
+      }).catch(function (error) {
+        var errorMessage = 'Could not update the block: ' + jQuery.parseJSON(error.responseText).reason;
+        alert(errorMessage);
+        console.log(errorMessage, arguments);
+      });
+  },
 
-            //textarea.remove();
-            helper
-                .callHandler(this.model.id, "save", {content: new_val})
-                .then(
-                    // success
-                    function () {
-                        jQuery(event.target).addClass("accept");
-                        view.switchBack();
-                    },
+  onModeSwitch(toView, event) {
+    if (toView != 'student') {
+      return;
+    }
 
-                    // error
-                    function (error) {
-                        var errorMessage = 'Could not update the block: '+jQuery.parseJSON(error.responseText).reason;
-                        alert(errorMessage);
-                        console.log(errorMessage, arguments);
-                    })
-                .done();
-        },
+    // the user already switched back (i.e. the is not visible)
+    if (!this.$el.is(':visible')) {
+      return;
+    }
 
-        onModeSwitch: function (toView, event) {
-            if (toView != 'student') {
-                return;
-            }
+    // another listener already handled the user's feedback
+    if (event.isUserInputHandled) {
+      return;
+    }
 
-            // the user already switched back (i.e. the is not visible)
-            if (!this.$el.is(':visible')) {
-                return;
-            }
-
-            // another listener already handled the user's feedback
-            if (event.isUserInputHandled) {
-                return;
-            }
-
-            event.isUserInputHandled = true;
-            Backbone.trigger('preventviewswitch', !confirm('Es gibt nicht gespeicherte Änderungen. Möchten Sie trotzdem fortfahren?'));
-        }, 
-	
-    });
+    event.isUserInputHandled = true;
+    Backbone.trigger('preventviewswitch', !confirm('Es gibt nicht gespeicherte Änderungen. Möchten Sie trotzdem fortfahren?'));
+  }
 });

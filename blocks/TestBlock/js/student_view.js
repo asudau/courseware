@@ -1,101 +1,119 @@
-define(['assets/js/student_view', 'assets/js/url'], function (StudentView, helper) {
-    'use strict';
+import $ from 'jquery'
+import StudentView from 'js/student_view'
+import helper from 'js/url'
 
-    return StudentView.extend({
-        events: {
-            'click button[name=reset-exercise]': function (event) {
-                var $form = this.$(event.target).closest('form');
-                var view = this;
+export default StudentView.extend({
+    events: {
+        'click button[name=reset-exercise]': function (event) {
+            var $form = this.$(event.target).closest('form'),
+            view = this,
+            $exercise_index = $form.find('input[name="exercise_index"]').val(),
+            $block = this.$el.parent();
 
-                if (confirm('Soll die Antwort zurückgesetzt werden?')) {
-                    helper
-                        .callHandler(this.model.id, 'exercise_reset', $form.serialize())
-                        .then(
-                            function () {
-                                view.renderServerSide();
-                            },
-                            function () {
-                                console.log('failed to reset the exercise');
-                            }
-                        ).done();
-                }
-
-                return false;
-            },
-            'click button[name=submit-exercise]': function (event) {
-                var $form = this.$(event.target).closest('form');
-                var view = this;
-
-                helper
-                    .callHandler(this.model.id, 'exercise_submit', $form.serialize())
-                    .then(
-                        function () {
-                            view.renderServerSide();
-                        },
-                        function () {
-                            console.log('failed to store the solution');
-                        }
-                    ).done();
-
-                return false;
-            }
-        },
-
-        initialize: function(options) {
-        },
-
-        render: function() {
-            return this;
-        },
-
-        postRender: function () {
-            var view = this;
-            var fixAnswersHeight = function (labels, answers) {
-                for (var i = 0; i < labels.length && i < answers.length; i++) {
-                    var answer = answers.eq(i);
-                    answer.css({height: 'auto'});
-                    var label = labels.eq(i);
-                    label.css({height: 'auto'});
-                    var labelHeight = label.height();
-                    var answerHeight = answer.height();
-
-                    if (labelHeight > answerHeight) {
-                        answer.css({height: labelHeight});
-                    } else if (labelHeight < answerHeight) {
-                        label.css({height: answerHeight});
-                    }
-                }
-            };
-            jQuery('ul.exercise_answers', this.$el).each(function () {
-                var $sortableAnswers = $(this);
-                var $sortableLabels = $('ul.matching_exercise.labels', $(this).parent());
-                fixAnswersHeight($('li', $sortableAnswers), $('li', $sortableLabels));
-                $sortableAnswers.sortable({
-                    axis: 'y',
-                    containment: $sortableAnswers,
-                    tolerance: 'pointer',
-                    update: function () {
-                        view.moveChoice($sortableAnswers);
-                        fixAnswersHeight($('li', $sortableAnswers), $('li', $sortableLabels));
-                    },
-                    sort: function (event, ui) {
-                        // this workaround is needed, otherwise, sortable items
-                        // would jump when the user scrolled down before sorting
-                        ui.helper.css({
-                            top : ui.position.top + $(window).scrollTop() + 'px'
-                        });
-                    }
+            if (confirm('Soll die Antwort zurückgesetzt werden?')) {
+                helper.callHandler(this.model.id, 'exercise_reset', $form.serialize())
+                .then(function () {
+                    return view.renderServerSide();
+                }).catch(function () {
+                    console.log('failed to reset the exercise');
+                }).then(function () {
+                    $block.find('.exercise').hide();
+                    $block.find('#exercise' + $exercise_index).show();
+                    $(window).trigger('resize');
                 });
-            });
+            }
+
+          return false;
         },
 
-        moveChoice: function ($sortableAnswers) {
-            var items = $sortableAnswers.sortable('toArray');
-            var $inputs = jQuery('input', $sortableAnswers);
+        'click button[name=submit-exercise]': function (event) {
+            var $form = this.$(event.target).closest('form'),
+            view = this,
+            $exercise_index = $form.find('input[name="exercise_index"]').val(),
+            $block = this.$el.parent();
 
-            for (var i = 0; i < items.length; i++) {
-                $inputs.eq(i).val(i);
+            helper.callHandler(this.model.id, 'exercise_submit', $form.serialize())
+            .then(function (resp) {
+                if(resp.is_nobody) {
+                    var $ex =view.$("#exercise"+resp.exercise_index);
+                    $ex.find(".cw-test-content").first().html('<form class="studip_form"><fieldset><legend>'+resp.title+'</legend>'+resp.solution+'</fieldset></form>');
+                } else {
+                    return view.renderServerSide();
+                }
+            }).then(function () {
+                $block.find('.exercise').hide();
+                $block.find('#exercise' + $exercise_index).show();
+                $block.find('.submitinfo').slideDown(250).delay(1500).slideUp(250);
+                $(window).trigger('resize');
+            })
+            .catch(function () {
+                console.log('failed to store the solution');
+            });
+
+            return false;
+        },
+
+        'click button[name=exercisenav]': function (event) {
+            var options = $.parseJSON(this.$(event.target).attr('button-data')),
+            $num = parseInt(options.id),
+            $block = this.$el.parent();
+
+            if (options.direction == 'next') {
+                $num++;
+            } else {
+                $num--;
+            }
+            if ($num > parseInt(options.numexes, 10)) {
+                $num = 1;
+            }
+            if ($num < 1) {
+                $num = parseInt(options.numexes, 10);
+            }
+            $block.find('.exercise').hide();
+            var $ex = $block.find('#exercise' + $num).show();
+            if ($ex.find("input[name=exercise_type]").val() == 'tb_exercise') {
+                $ex.find('table.default').hide();
+            }
+            $(window).trigger('resize');
+        },
+
+        'click button[name=exercise-hint-button]': function (event) {
+            $('#exercise-hint-' + this.$(event.target).attr('exercise-data')).toggle('slow');
+            if (this.$(event.target).hasClass("showing")) {
+                this.$(event.target).removeClass("showing");
+                this.$(event.target).html("Hinweis anzeigen");
+            } else {
+                this.$(event.target).addClass("showing");
+                this.$(event.target).html("Hinweis ausblenden");
             }
         }
-    });
+    },
+
+    initialize() {
+    },
+
+    render() {
+        return this;
+    },
+
+    postRender() {
+        // TODO this code from vips.js should be called by vips.js
+        this.$('.rh_list').sortable({
+            axis: 'y',
+            containment: 'parent',
+            item: '> .rh_item',
+            tolerance: 'pointer',
+            update: this.rh_move_choice
+        });
+        
+    },
+
+    // TODO this code from vips.js should be called by vips.js
+    rh_move_choice(event, ui)
+    {
+        jQuery(this).children().each(function(i) {
+            jQuery(this).find('input').val(i);
+        });
+    }
+
 });

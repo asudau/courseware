@@ -1,4 +1,4 @@
-<?
+<?php
 namespace Mooc\UI\HtmlBlock;
 
 use Mooc\UI\Block;
@@ -10,46 +10,65 @@ use Symfony\Component\DomCrawler\Crawler;
 class HtmlBlock extends Block
 {
     const NAME = 'Freitext';
+    const BLOCK_CLASS = 'multimedia';
+    const DESCRIPTION = 'Erstellen von Inhalten mit dem WYSIWYG-Editor';
 
-    function initialize()
+    public function initialize()
     {
         $this->defineField('content', \Mooc\SCOPE_BLOCK, '');
     }
 
-    function student_view()
+    public function student_view()
     {
+        if (!$this->isAuthorized()) {
+            return array('inactive' => true);
+        }
         $this->setGrade(1.0);
-        return array('content' => formatReady($this->content));
+        
+        $content = $this->content;
+        if (strpos($content, "<!DOCTYPE html") == 0 ) {
+            $content = \STUDIP\Markup::markAsHtml($content);
+        }
+
+        $content = formatReady($content);
+
+        return array('content' => $content);
     }
 
-
-    function author_view()
+    public function author_view()
     {
-        return $this->toJSON();
+        $this->authorizeUpdate();
+        $content = htmlReady($this->content);
+
+        return compact('content');
     }
 
     /**
      * Updates the block's contents.
      *
-     * @param array $data                  The request data
-     * @param bool  $isParentBlockRequired By default, a content block can only
-     *                                     be modified it a parent block does
-     *                                     exist. Pass false to bypass this check
-     *                                     (this is, for example, needed when
-     *                                     the course overview page is edited.
+     * @param array $data The request data
      *
      * @return array The block's data
      */
-    public function save_handler(array $data, $isParentBlockRequired = true)
+    public function save_handler(array $data)
     {
-        if ($isParentBlockRequired) {
-            $this->requireUpdatableParent(array('parent' => $this->getModel()->parent_id));
-        }
-
-        if($this->container['wysiwyg_refined']) {
-          $this->content = \STUDIP\Markup::markAsHtml(\STUDIP\Markup::purify((string) $data['content']));
+        $this->authorizeUpdate();
+        $content = \STUDIP\Markup::purifyHtml((string) $data['content']);
+        if ($content == "") {
+            $this->content = "";
         } else {
-          $this->content = (string) $data['content'];
+            $dom = new \DOMDocument();
+            $dom->loadHTML($content);
+            $xpath = new \DOMXPath($dom);
+            $hrefs = $xpath->evaluate("//a");
+            for ($i = 0; $i < $hrefs->length; $i++) {
+                $href = $hrefs->item($i);
+                if($href->getAttribute("class") == "link-extern") {
+                $href->removeAttribute('target');
+                $href->setAttribute("target", "_blank");
+                }
+            }
+            $this->content = $dom->saveHTML();
         }
 
         return array('content' => $this->content);
@@ -72,9 +91,7 @@ class HtmlBlock extends Block
             if (!$element instanceof \DOMElement || !$element->hasAttribute('href')) {
                 continue;
             }
-
             $block = $this;
-
             $this->applyCallbackOnInternalUrl($element->getAttribute('href'), function ($components) use ($block, $element) {
                 $element->setAttribute('href', $block->buildUrl('http://internal.moocip.de', '/sendfile.php', $components));
             });
@@ -85,9 +102,7 @@ class HtmlBlock extends Block
             if (!$element instanceof \DOMElement || !$element->hasAttribute('src')) {
                 continue;
             }
-
             $block = $this;
-
             $this->applyCallbackOnInternalUrl($element->getAttribute('src'), function ($components) use ($block, $element) {
                 $element->setAttribute('src', $block->buildUrl('http://internal.moocip.de', '/sendfile.php', $components));
             });
@@ -160,16 +175,14 @@ class HtmlBlock extends Block
     public function importContents($contents, array $files)
     {
         $document = new \DOMDocument();
-        $document->loadHTML($contents);
+        $document->loadHTML(studip_utf8decode($contents));
 
         $anchorElements = $document->getElementsByTagName('a');
         foreach ($anchorElements as $element) {
             if (!$element instanceof \DOMElement || !$element->hasAttribute('href')) {
                 continue;
             }
-
             $block = $this;
-
             $this->applyCallbackOnInternalUrl($element->getAttribute('href'), function ($components) use ($block, $element, $files) {
                 parse_str($components['query'], $queryParams);
                 $queryParams['file_id'] = $files[$queryParams['file_id']]->id;
@@ -183,9 +196,7 @@ class HtmlBlock extends Block
             if (!$element instanceof \DOMElement || !$element->hasAttribute('src')) {
                 continue;
             }
-
             $block = $this;
-
             $this->applyCallbackOnInternalUrl($element->getAttribute('src'), function ($components) use ($block, $element, $files) {
                 parse_str($components['query'], $queryParams);
                 $queryParams['file_id'] = $files[$queryParams['file_id']]->id;
@@ -193,8 +204,8 @@ class HtmlBlock extends Block
                 $element->setAttribute('src', $block->buildUrl($GLOBALS['ABSOLUTE_URI_STUDIP'], '/sendfile.php', $components));
             });
         }
+        $this->content = \STUDIP\Markup::purifyHtml($document->saveHTML());
 
-        $this->content = $document->saveHTML();
         $this->save();
     }
 
@@ -212,9 +223,7 @@ class HtmlBlock extends Block
         if (!\Studip\MarkupPrivate\MediaProxy\isInternalLink($url) && substr($url, 0, 25) !== 'http://internal.moocip.de') {
             return null;
         }
-
         $components = parse_url($url);
-
         if (
             isset($components['path'])
             && substr($components['path'], -13) == '/sendfile.php'

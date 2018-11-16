@@ -1,4 +1,5 @@
 <?php
+
 namespace Mooc\DB;
 
 /**
@@ -20,53 +21,57 @@ namespace Mooc\DB;
  */
 class Block extends \SimpleORMap implements \Serializable
 {
-
     public $errors = array();
+
+    protected static function configure($config = array())
+    {
+        $config['db_table'] = 'mooc_blocks';
+
+        $config['belongs_to']['parent'] = array(
+            'class_name' => 'Mooc\\DB\\Block',
+            'foreign_key' => 'parent_id'
+        );
+
+        $config['belongs_to']['course'] = array(
+            'class_name' => '\\Course',
+            'foreign_key' => 'seminar_id'
+        );
+
+        $config['has_many']['children'] = array(
+            'class_name' => 'Mooc\\DB\\Block',
+            'assoc_foreign_key' => 'parent_id',
+            'assoc_func' => 'findByParent_id',
+            'on_delete' => 'delete',
+            'on_store' => 'store'
+        );
+
+        $config['registered_callbacks']['before_create'] = array(
+            'ensureSeminarId',
+            'ensurePositionId'
+        );
+
+        $config['registered_callbacks']['before_store'] = array(
+            'validate'
+        );
+
+        $config['registered_callbacks']['after_delete'] = array(
+            'destroyFields',
+            'destroyUserProgress',
+            'updatePositionsAfterDelete'
+        );
+
+        parent::configure($config);
+    }
 
     /**
      * Give primary key of record as param to fetch
      * corresponding record from db if available, if not preset primary key
-     * with given value. Give null to create new record
+     * with given value. Give null to create new record.
      *
      * @param mixed $id primary key of table
      */
-    public function __construct($id = null) {
-
-        $this->db_table = 'mooc_blocks';
-
-        $this->belongs_to['parent'] = array(
-            'class_name'  => 'Mooc\\DB\\Block',
-            'foreign_key' => 'parent_id');
-
-        $this->belongs_to['course'] = array(
-            'class_name'  => '\\Course',
-            'foreign_key' => 'seminar_id');
-
-
-        // workaround for Stud.IP ticket:5312
-        $options = $this->getRelationOptions('course');
-        $options = $this->getRelationOptions('parent');
-
-
-        $this->has_many['children'] = array(
-            'class_name'        => 'Mooc\\DB\\Block',
-            'assoc_foreign_key' => 'parent_id',
-            'assoc_func'        => 'findByParent_id',
-            'on_delete'         => 'delete',
-            'on_store'          => 'store'
-        );
-
-        $this->registerCallback('before_create', 'ensureSeminarId');
-        $this->registerCallback('before_create', 'ensurePositionId');
-        $this->registerCallback('before_store',  'validate');
-
-        $this->registerCallback('after_delete',  'destroyFields');
-        $this->registerCallback('after_delete',  'destroyUserProgress');
-        $this->registerCallback('after_delete',  'updatePositionsAfterDelete');
-
-        $events = words('after_create after_update after_store after_delete');
-        $this->registerCallback($events, 'callbackToMetrics');
-
+    public function __construct($id = null)
+    {
         parent::__construct($id);
     }
 
@@ -92,12 +97,18 @@ class Block extends \SimpleORMap implements \Serializable
      */
     protected function ensurePositionId()
     {
-        if ($this->parent_id !== null && $this->position === null) {
+        // Check for new and old version
+        if ($this->parent_id !== null && !$this->position) {
             $this->position = static::countBySQL(
                 'parent_id = ? ORDER BY position ASC',
                 array($this->parent_id)
             );
         }
+    }
+
+    public function getNewPosition($parent_id)
+    {
+        return static::countBySQL( 'parent_id = ? ORDER BY position ASC', array($parent_id));
     }
 
     public function getAncestors()
@@ -127,33 +138,34 @@ class Block extends \SimpleORMap implements \Serializable
         return static::findBySQL('parent_id = ? ORDER BY position ASC', array($id));
     }
 
-
     public static function findCourseware($cid)
     {
-        return current(self::findBySQL('seminar_id = ? AND parent_id IS NULL LIMIT 1', array($cid)));
+        return current(self::findBySQL('seminar_id = ? AND type = ? LIMIT 1', array($cid, 'Courseware')));
+    }
+
+    public function getCoursewareOfThisBlock()
+    {
+        return static::findOneBySQL('seminar_id = ? AND type = ? LIMIT 1', array($this->seminar_id, 'Courseware'));
     }
 
     /**
      * Find all Block of given types in a single course.
      *
-     * @param string $cid    the ID of the course
-     * @param mixed  $types  either a string containing a single block type
-     *                       or an array of strings containing block types
+     * @param string $cid   the ID of the course
+     * @param mixed  $types either a string containing a single block type
+     *                      or an array of strings containing block types
      *
-     * @return array  an array of Block instances of those types in
-     *                that course
+     * @return array an array of Block instances of those types in
+     *               that course
      */
-
     public static function findInCourseByType($cid, $types = array())
     {
         if (!is_array($types)) {
             $types = (array) $types;
         }
 
-        return static::findBySQL('seminar_id = ? AND type IN (?) ORDER BY position ASC',
-                                 array($cid, $types));
+        return static::findBySQL('seminar_id = ? AND type IN (?) ORDER BY position ASC', array($cid, $types));
     }
-
 
     // enumerate all known structural block classes
     private static $structural_block_classes = array('Courseware', 'Chapter', 'Subchapter', 'Section');
@@ -161,7 +173,7 @@ class Block extends \SimpleORMap implements \Serializable
     /**
      * Return all known structural block classes.
      *
-     * @return array  all known structure classes
+     * @return array all known structure classes
      */
     public static function getStructuralBlockClasses()
     {
@@ -171,7 +183,7 @@ class Block extends \SimpleORMap implements \Serializable
     /**
      * Returns whether this block is a structural block.
      *
-     * @return bool  `true` if it is a structural block, `false` otherwise
+     * @return bool `true` if it is a structural block, `false` otherwise
      */
     public function isStructuralBlock()
     {
@@ -179,22 +191,25 @@ class Block extends \SimpleORMap implements \Serializable
     }
 
     /**
-     * checks, if block is valid
+     * checks, if block is valid.
      *
-     * @return boolean true or false
+     * @return bool true or false
      */
-    function validate() {
+    public function validate()
+    {
         if (!strlen(trim($this->title))) {
-            $this->errors[] = "Title may not be empty.";
+            $this->errors[] = 'Title may not be empty.';
+
             return false;
         }
+
         return true;
     }
 
     /**
      * Remove associated Fields on delete.
      */
-    function destroyFields()
+    public function destroyFields()
     {
         Field::deleteBySQL('block_id = ?', array($this->id));
     }
@@ -202,7 +217,7 @@ class Block extends \SimpleORMap implements \Serializable
     /**
      * Remove associated UserProgress on delete.
      */
-    function destroyUserProgress()
+    public function destroyUserProgress()
     {
         UserProgress::deleteBySQL('block_id = ?', array($this->id));
     }
@@ -233,11 +248,11 @@ class Block extends \SimpleORMap implements \Serializable
     }
 
     /**
-     * Update child sorting
+     * Update child sorting.
      *
      * @param array $positions the new sort order
      */
-    function updateChildPositions($positions)
+    public function updateChildPositions($positions)
     {
         $query = sprintf(
             'UPDATE %s SET position = FIND_IN_SET(id, ?) WHERE parent_id = ?',
@@ -250,11 +265,11 @@ class Block extends \SimpleORMap implements \Serializable
     }
 
     /**
-     *
      * @param int $timestamp
-     * @return boolean
+     *
+     * @return bool
      */
-    function isPublished($timestamp = null)
+    public function isPublished($timestamp = null)
     {
         if (is_null($timestamp)) {
             $timestamp = time();
@@ -287,41 +302,66 @@ class Block extends \SimpleORMap implements \Serializable
         $this->setNew($is_new);
     }
 
-    public function callbackToMetrics($callback_type)
-    {
-        if ($this->type) {
-            $metric = sprintf('moocip.block.%s.%s',
-                              strtolower($this->type),
-                              substr(strtolower($callback_type), strlen('after_')));
-            \Metrics::increment($metric);
-        }
-    }
-
     // has the given user completed (progress = 100%) this content
     // block or all of its descendent content blocks
     public function hasUserCompleted($uid)
     {
-        // structural blocks compute their score using their non-structural descendants
-        if ($this->isStructuralBlock()) {
+        if ($uid === 'nobody') {
+            // TODO: (mlunzena) oder lieber true?
+            return false;
+        } elseif ($this->isStructuralBlock()) {
+            // structural blocks compute their score using their non-structural descendants
 
             // empty structural blocks are not completed
             if (sizeof($this->children) === 0) {
-                return false;
+                return true;
             }
 
             $completings = array();
             foreach ($this->children as $child) {
                 $completings[] = $child->hasUserCompleted($uid);
             }
-            $status = array_search(false, array_flatten($completings)) === FALSE;
+            $status = array_search(false, array_flatten($completings)) === false;
 
             return $status;
-
-        }
-
-        else {
+        } else {
             $progress = new UserProgress(array($this->id, $uid));
+
             return $progress->getPercentage() === 1;
         }
+    }
+
+    public function getContentChildren()
+    {
+        return $this->children->filter(function ($child) {
+            return !in_array($child->type, Block::getStructuralBlockClasses());
+        });
+    }
+
+    public function getStructuralChildren()
+    {
+        return $this->children->filter(function ($child) {
+            return in_array($child->type, Block::getStructuralBlockClasses());
+        });
+    }
+
+    public function getUUID()
+    {
+        global $STUDIP_INSTALLATION_ID;
+
+        $hash = sha1($STUDIP_INSTALLATION_ID.$this->seminar_id.$this->id);
+
+        return sprintf('%08s-%04s-%04x-%04x-%12s',
+                       substr($hash, 0, 8),
+                       substr($hash, 8, 4),
+                       (hexdec(substr($hash, 12, 4)) & 0x0fff) | 0x5000,
+                       (hexdec(substr($hash, 16, 4)) & 0x3fff) | 0x8000,
+                       substr($hash, 20, 12)
+        );
+    }
+    
+    public function belongesToCourse($cid)
+    {
+        return $this->seminar_id == $cid;
     }
 }

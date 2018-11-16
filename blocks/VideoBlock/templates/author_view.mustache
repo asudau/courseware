@@ -1,23 +1,80 @@
-<iframe src="{{url}}" scrolling="no" allowfullscreen></iframe>
-<p id="videourl">{{url}}</p>
-<div id="videodata">
-Video-Typ: <select id="videotype">
-    <option value="youtube">youtube</option>
-    <option value="matterhorn">matterhorn</option>
-    <option value="url">url</option>
-</select>
-<span id="videosrcname">URL</span><input type="text" id="videosrc">
-</div>
-<div id="videosettings">
-    <span>Video automatisch starten<input type="checkbox" id="videoautostart" ></span>
-    <span>Kontrollelemente verstecken<input type="checkbox" id="videocontrols" ></span> <br/>
-    <span>Start<input id="videostartmin" type="number" min="0" placeholder="min" ><input id="videostartsec" type="number" step="1" max="59" min="0" placeholder="sek"></span> 
-    <span>Ende<input id="videoendmin" type="number" min="0" placeholder="min"><input id="videoendsec" type="number" step="1" max="59" min="0" placeholder="sek"></span> <br/>
-</div>
-<div id="videostatus"><span class="status">&nbsp;</span></div>
-<div id="videobuttons">
-<button name="preview" class="button">Vorschau</button>
-<button name="save" class="button">Speichern</button>
-<button name="cancel" class="button">Abbrechen</button>
-</div>
+<input type="hidden" class="cw-videoblock-stored-url" value="{{url}}">
+<input type="hidden" class="cw-videoblock-stored-aspect" value="{{aspect}}">
+<input type="hidden" class="webvideodata" value="{{webvideo}}">
+<input type="hidden" class="webvideosettingsdata" value="{{webvideosettings}}">
 
+<div class="video-wrapper {{aspect}}">
+  <iframe src="{{url}}" scrolling="no" allowfullscreen></iframe>
+  <video width="100%" controls ></video>
+</div>
+<div class="videodata">
+    <div class="videotype-selection">
+    <label>{{#i18n}}Video-Typ:{{/i18n}}</label>
+    <select class="videotype">
+        <option value="webvideo">{{#i18n}}Webvideo (URL){{/i18n}}</option>
+        <option value="url">{{#i18n}}eingebettetes Video (iframe){{/i18n}}</option>
+    </select>
+    <button class="cw-webvideo-type-info cw-info" data-title="{{#i18n}}Für Videos von Plattformen wie YouTube oder vimeo nutzen Sie bitte den Embed-Block{{/i18n}}"></button>
+    </div>
+    <div class="videoblocktitle">
+        <label class="videotitlename">{{#i18n}}Überschrift{{/i18n}}: </label>
+        <input type="text" class="videotitle" value="{{videoTitle}}">
+    </div>
+    <label for="videoaspect">{{#i18n}}Seitenverhältnis{{/i18n}}</label>
+    <select name="videoaspect" class="cw-videoblock-aspect">
+        <option value="aspect-169">16:9</option>
+        <option value="aspect-43">4:3</option>
+    </select>
+    <div class="videosource videosource-url">
+        <input type="hidden" class="videourl" value= "{{url}}">
+        <label class="videosrcname">{{#i18n}}Quelle{{/i18n}}:</label>
+        <input type="text" class="videosrc" value="{{url}}">
+    </div>
+    <div class="videosource videosource-webvideo">
+        <div class="webvideo-description">
+            <p>
+            {{#i18n}}Sie können mehrere Quellen pro Video angeben. Neben unterschiedlichen Formaten sind auch Videos für kleine Displays (&le;800px) und große Displays (>800px) möglich.{{/i18n}}
+            </p>
+        </div>
+        <div class="webvideo">
+            <select class="cw-webvideo-source">
+                <option value="url">{{#i18n}}webVideo (URL){{/i18n}}:</option>
+                <option value="file">{{#i18n}}Dateibereich{{/i18n}}:</option>
+            </select>
+            <input type="text" class="cw-webvideo-source-url">
+            <button class="cw-webvideo-source-url-info cw-info" data-title="{{#i18n}}Geben Sie hier eine URL an die direkt zu einer Videodatei führt. Die URL können Sie z.B. aus der Adresszeile Ihres Browsers kopieren.{{/i18n}}"></button>
+
+            <select class="cw-webvideo-source-file" {{^video_files}}disabled{{/video_files}}>
+                {{#video_files}}
+                    <option file_id="{{dokument_id}}" file_name="{{name}}" file_url="{{download_url}}">{{name}}</option>
+                {{/video_files}}
+                {{^video_files}}
+                    <option file_id="" file_name="" file_url="" selected>{{#i18n}}keine Videodatei verfügbar{{/i18n}}</option>
+                {{/video_files}}
+            </select>
+            <button class="cw-webvideo-source-file-info cw-info" data-title="{{#i18n}}Hier werden alle Videodateien aus dem Dateibereich aufgelistet.{{/i18n}}"></button>
+            <br>
+            <label for="webvideosrc-mediatype" class="cw-webvideo-label">{{#i18n}}Dateityp{{/i18n}}:</label>
+            <select class="webvideosrc-mediatype">
+                <option value="mp4">mp4</option>
+                <option value="webm">webm</option>
+                <option value="ogg">ogg</option>
+            </select>
+            <label for="webvideosrc-mediaquery" class="cw-webvideo-label">{{#i18n}}Bildschirm{{/i18n}}:</label>
+            <select class="webvideosrc-mediaquery">
+                <option value="normal">{{#i18n}}für alle Displaygrößen{{/i18n}}</option>
+                <option value="large">{{#i18n}}für große Displays{{/i18n}}</option>
+                <option value="small">{{#i18n}}für kleine Displays{{/i18n}}</option>
+            </select>
+        </div>
+        <button name="addmediatype" class="addmediatype">{{#i18n}}Quelle hinzufügen{{/i18n}}</button>
+    </div>
+    <div class="videostatus">
+        <span class="status">&nbsp;</span>
+    </div>
+    <div class="cw-button-box">
+        <button name="preview" class="button">{{#i18n}}Vorschau{{/i18n}}</button>
+        <button name="save" class="button">{{#i18n}}Speichern{{/i18n}}</button>
+        <button name="cancel" class="button">{{#i18n}}Abbrechen{{/i18n}}</button>
+    </div>
+</div>

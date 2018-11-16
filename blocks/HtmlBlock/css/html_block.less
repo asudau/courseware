@@ -1,3 +1,5 @@
+@import '../../../assets/less/mixins';
+
 section.HtmlBlock {
   .controls button.no-sorting {
     visibility: hidden;
@@ -5,6 +7,10 @@ section.HtmlBlock {
 
   textarea {
     width: 100%;
+  }
+
+  .cke_editable {
+    min-height: 12em;
   }
 
   div.content {
@@ -16,6 +22,21 @@ section.HtmlBlock {
       content: ".";
       display: block;
       visibility: hidden;
+      clear: both;
     }
   }
+}
+
+/* sidebar special */
+.cw-sidebar {
+    .cw-html-wrapper {
+        
+        .cw-html-header {
+            .cw-block-header-sidebar();
+            height: 20px;
+        }
+    }
+    .content {
+        padding: 0 5px;
+    }
 }

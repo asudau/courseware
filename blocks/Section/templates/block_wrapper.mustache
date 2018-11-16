@@ -9,8 +9,10 @@
 
     <button class=lower>{{#i18n}}Absenken{{/i18n}}</button>
     <button class=raise>{{#i18n}}Anheben{{/i18n}}</button>
-    <button class=author>{{#i18n}}Ändern{{/i18n}}</button>
-    <button class=trash>{{#i18n}}Entfernen{{/i18n}}</button>
+    <button class=author data-title="{{#i18n}}Block bearbeiten{{/i18n}}">{{#i18n}}Ändern{{/i18n}}</button>
+    <button class=trash data-title="{{#i18n}}Block entfernen{{/i18n}}">{{#i18n}}Entfernen{{/i18n}}</button>
+    <button class=info data-title="Id: {{id}}, {{#i18n}}erstellt am{{/i18n}}: {{make_date}}, Blocktyp: {{type}}">{{#i18n}}Info{{/i18n}}</button>
+    
   </div>
 
   <div class="block-content" data-view="{{view_name}}">

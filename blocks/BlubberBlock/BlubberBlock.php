@@ -16,6 +16,9 @@ class BlubberBlock extends Block
 
     public function student_view()
     {
+        if (!$this->isAuthorized()) {
+            return array('inactive' => true);
+        }
         if (!$active = self::blubberActivated($this)) {
             return compact('active');
         }
@@ -42,6 +45,8 @@ class BlubberBlock extends Block
 
     public function author_view()
     {
+        $this->authorizeUpdate();
+
         if (!$active = self::blubberActivated($this)) {
             return compact('active');
         }
@@ -60,8 +65,12 @@ class BlubberBlock extends Block
     /**
      * {@inheritdoc}
      */
-    public static function additionalInstanceAllowed(Section $section, $subType = null)
+    public static function additionalInstanceAllowed($container, Section $section, $subType = null)
     {
+        // deactivate new Blubber blocks
+        // see https://github.com/virtUOS/courseware/issues/31
+        return false;
+
         if (!self::blubberActivated($section)) {
             return false;
         }

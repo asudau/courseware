@@ -1,265 +1,454 @@
 <?php
-
 namespace Mooc\UI\TestBlock;
 
-use Mooc\Container;
 use Mooc\UI\Block;
-use Mooc\UI\Section\Section;
-use Mooc\UI\TestBlock\Model\Exercise;
-use Mooc\UI\TestBlock\Model\Test;
-use Mooc\UI\TestBlock\Vips\Bridge as VipsBridge;
 
 /**
- * @author Christian Flothmann <christian.flothmann@uos.de>
+ * @author Ron Lucke <rlucke@uos.de>
  */
-class TestBlock extends Block
+
+class TestBlock extends Block 
 {
     const NAME = 'Quiz';
+    const BLOCK_CLASS = 'interaction';
+    const DESCRIPTION = 'Stellt ein Aufgabenblatt aus Vips zur Verfügung';
+    const HINT = 'Für diesen Block muss das Vips Plugin aktiviert sein';
 
-    /**
-     * @var \Mooc\UI\TestBlock\Model\Test
-     */
-    private $test;
-
-    /**
-     * @var array Cache of imported tests, used to avoid creating tests twice during imports
-     */
-    private static $importedTests = array();
-
-    /**
-     * @var array Cache of imported exercises, used to avoid creating exercises twice during imports
-     */
-    private static $importedExercises = array();
-
-    public function __construct(Container $container, \SimpleORMap $model)
+    function initialize()
     {
-        parent::__construct($container, $model);
+        $this->defineField('test_id', \Mooc\SCOPE_BLOCK, '');
+        $this->defineField('assignment_id', \Mooc\SCOPE_BLOCK, '');
+        $this->defineField('tries',   \Mooc\SCOPE_USER, array()); // Field to count the tries
     }
 
-    public function initialize()
-    {
-        $this->defineField('test_id', \Mooc\SCOPE_BLOCK, null);
-        $this->loadRelatedTest();
-    }
-
-    /**
-     * {@inheritdoc}
-     */
     public static function getSubTypes()
     {
         return array(
-            'exam' => _('Klausur'),
-            'selftest' => _('Selbsttest'),
-            'practice' => _('Übungsblatt'),
+            'selftest' => _cw('Selbsttest'),
+            'practice' => _cw('Übung'),
         );
     }
 
     public function student_view()
     {
-        $active = VipsBridge::vipsActivated($this);
-        return $active ? array_merge(compact('active'), $this->buildExercises()) : compact('active');
+        if (!$this->isAuthorized()) {
+            return array('inactive' => true);
+        }
+        $courseware = $this->container['current_courseware'];
+        if (!$installed = $courseware->vipsInstalled()) {
+            return compact('installed');
+        }
+        if (!$active = $courseware->vipsActivated()) {
+            return array('active' => $active, 'installed'=> $installed);
+        }
+        if (!$version = $courseware->vipsVersion()) {
+            return array('active' => $active, 'version'=> $version, 'installed'=> $installed);
+        }
+        $this->calcGrades();
+        $subtype =  $this->_model->sub_type;
+
+        if ($this->assignment_id == "") {
+            if ($this->test_id != "") {
+                $assignment = \VipsAssignment::findOneBySQL('test_id = ?', array($this->test_id));
+            } else {
+                $assignment = null;
+            }
+        } else {
+            $assignment = \VipsAssignment::find($this->assignment_id);
+        }
+
+        $type_mismatch = !($assignment->type ==  $subtype);
+        if ($assignment->type == null) {
+            return array(
+                'exercises'     => false,
+                'typemismatch'  => false,
+                'active'        => $active, 
+                'version'       => $version,
+                'installed'     => $installed
+            );
+        }
+        if ($type_mismatch) {
+            return array(
+                'exercises'     => false,
+                'typemismatch'  => true,
+                'active'        => $active, 
+                'version'       => $version,
+                'installed'     => $installed
+            );
+        }
+
+        return array_merge($this->getAttrArray(), array(
+            'active' => $active,
+            'version' => $version,
+            'installed' => $installed
+        ), $this->buildExercises());
     }
 
     public function author_view()
     {
-        if (!$active = VipsBridge::vipsActivated($this)) {
-            return compact('active');
+        $this->authorizeUpdate();
+        $courseware = $this->container['current_courseware'];
+        if (!$installed = $courseware->vipsInstalled()) {
+            return compact('installed');
         }
+        if (!$active = $courseware->vipsActivated()) {
+            return array('active' => $active, 'installed'=> $installed);
+        }
+        if (!$version = $courseware->vipsVersion()) {
+            return array('active' => $active, 'version'=> $version, 'installed'=> $installed);
+        }
+        $subtype =  $this->_model->sub_type;
+        $stored_assignments = \VipsAssignment::findBySQL( 'course_id = ? and type = ?', array($this->_model->course->id, $subtype));
 
-        $storedTests = Test::findAllByType($this->_model->course->id, $this->_model->sub_type);
-        $tests       = array();
-
-        foreach ($storedTests as $test) {
-            $tests[] = array(
-                'id'              => $test->id,
-                'name'            => $test->title,
-                'created'         => isset($test->created) ? date('d.m.Y', strtotime($test->created)) : '',
-                'exercises_count' => count($test->exercises),
-                'current_test'    => $this->test_id === $test->id,
+        $assignments = array();
+        foreach ($stored_assignments as $assignment) {
+            $assignments[] = array(
+                'id'                    => $assignment->id,
+                'name'                  => $assignment->test->title,
+                'created'               => isset($assignment->test->created) ? date('d.m.Y', strtotime($assignment->test->created)) : '',
+                'exercises_count'       => count($assignment->test->exercises),
+                'current_assignment'    => $this->assignment_id === $assignment->id
             );
         }
 
-        return array(
-            'active'           => $active,
-            'manage_tests_url' => \PluginEngine::getURL(VipsBridge::getVipsPlugin(), array('action' => 'sheets'), 'show'),
-            'tests'            => $tests,
-        );
+        return array_merge($this->getAttrArray(), array( 
+            'has_assignments'   => !empty($assignments),
+            'type'              => $this->getSubTypes()[$subtype],
+            'assignments'       => $assignments, 
+            'active'            => $active, 
+            'version'           => $version,
+            'installed'         => $installed,
+            'manage_tests_url'  => \PluginEngine::getURL('vipsplugin', array(), 'sheets')
+            ));
     }
 
-
-    // ***** HANDLERS *****
-
-    // preclude any calls to handlers
-    public function handle($name, $data = array())
+    public function save_handler(array $data)
     {
-        if (!VipsBridge::vipsActivated($this)) {
-            throw \RuntimeException('Vips is not activated.');
-        }
+        $this->authorizeUpdate();
+        if (isset ($data['assignment_id'])) {
+            $this->assignment_id = (string) $data['assignment_id'];
+        } 
 
-        return parent::handle($name, $data);
-    }
-
-
-
-    public function modify_test_handler($testId)
-    {
-        $this->requireUpdatableParent(array('parent' => $this->getModel()->parent_id));
-
-        // change the test id
-        $this->test_id = $testId;
-
-        // and reload the test data
-        $this->test = new Test($this->test_id);
-
-        return $this->buildExercises();
-    }
-
-    public function exercise_reset_handler($data)
-    {
-        /** @var \Seminar_User $user */
-        global $user;
-
-        parse_str($data, $requestData);
-
-        $testId = $requestData['test_id'];
-        $exerciseId = $requestData['exercise_id'];
-
-        \check_test_access($testId);
-
-        $db = \DBManager::get();
-
-        // do not allow to delete solutions if the test is no selftest
-        $stmt = $db->prepare(
-            'SELECT
-              type
-            FROM
-              vips_test
-            WHERE
-              id = :test_id'
-        );
-        $stmt->bindValue(':test_id', $testId);
-        $stmt->execute();
-
-        if ($stmt->fetchColumn() != 'selftest') {
-            return false;
-        }
-
-        // delete the solution
-        $stmt = $db->prepare(
-            'DELETE FROM
-              vips_solution
-            WHERE
-              test_id = :test_id AND
-              exercise_id = :exercise_id AND
-              user_id = :user_id'
-        );
-        $stmt->bindValue(':test_id', $testId);
-        $stmt->bindValue(':exercise_id', $exerciseId);
-        $stmt->bindValue(':user_id', $user->cfg->getUserId());
-        $stmt->execute();
-
-        // determine the number of solutions of the current user that do still
-        // exist
-        $stmt = $db->prepare(
-            'SELECT
-              COUNT(*)
-            FROM
-              vips_solution
-            WHERE
-              test_id = :test_id AND
-              user_id = :user_id'
-        );
-        $stmt->bindValue(':test_id', $testId);
-        $stmt->bindValue(':user_id', $user->cfg->getUserId());
-        $stmt->execute();
-
-        // there are no solutions left, clean the solve start time
-        if ($stmt->fetchColumn() == 0) {
-            $stmt = $db->prepare(
-                'DELETE FROM
-                  vips_aufgaben_zeit
-                WHERE
-                  test_id = :test_id AND
-                  user_id = :user_id'
-            );
-            $stmt->bindValue(':test_id', $testId);
-            $stmt->bindValue(':user_id', $user->cfg->getUserId());
-            $stmt->execute();
-        }
-
-        $progress = $this->getProgress();
-        $progress->max_grade = count($this->test->exercises);
-        $progress->grade--;
-        $progress->store();
-
-        return array();
+        return;
     }
 
     public function exercise_submit_handler($data)
     {
-        global $vipsPlugin, $vipsTemplateFactory;
-
         parse_str($data, $requestParams);
+        $requestParams = studip_utf8decode($requestParams);
+        $exercise_id = $requestParams['exercise_id'];
+        $exercise_index = $requestParams['exercise_index'];
 
-        foreach ($requestParams as $key => $value) {
-            $_POST[$key] = $value;
+        if ($this->assignment_id == "") {
+            if ($this->test_id != "") {
+                $assignment = \VipsAssignment::findOneBySQL('test_id = ?', array($this->test_id));
+            } else {
+                $assignment = null;
+            }
+        } else {
+            $assignment = \VipsAssignment::find($this->assignment_id);
         }
 
-        $vipsPlugin = VipsBridge::getVipsPlugin();
-        $vipsTemplateFactory = new \Flexi_TemplateFactory(VipsBridge::getVipsPath().'/templates/');
+        check_exercise_access($exercise_id, $assignment->id);
+        $exercise = \Exercise::find($exercise_id);
 
-        \submit_exercise('sheets');
-        ob_clean();
+        // if it is a self test, count the tries
+        if($assignment->type == "selftest") {
+            if(!$this->tries) {
+                $local_tries = array();
+            } else {
+                $local_tries = $this->tries;
+            }
+            if(!$local_tries[$exercise_id]) {
+                $local_tries[$exercise_id] = 0;
+            }
+            $local_tries[$exercise_id] ++;
+            $this->tries = $local_tries;
+        }
 
-        $progress = $this->getProgress();
-        $progress->max_grade = count($this->test->exercises);
-        $progress->grade++;
-        $progress->store();
+        $start = $assignment->start;
+        $end = $assignment->end;
+        $now = date('Y-m-d H:i:s');
+
+        // not yet started or already ended
+        if ($start > $now || $now > $end) {
+            throw new \Exception(_cw('Das Aufgabenblatt kann zur Zeit nicht bearbeitet werden.'));
+        }
+        $solution = $exercise->getSolutionFromRequest($requestParams);
+        if ($this->container['current_user']->isNobody()) {
+                $assignment->correctSolution($solution);
+                return array(
+                    'is_nobody'      => true, 
+                    'hasSolution'    => true, 
+                    'solution'       => $exercise->getCorrectionTemplate($solution)->render(),
+                    'exercise_index' => $exercise_index,
+                    'title'          => $exercise->title
+                );
+        }
+        $assignment->storeSolution($solution);
+        $progress = $this->calcGrades();
+
+        return array('grade' => $progress->max_grade > 0 ? $progress->grade / $progress->max_grade : 0);
+    }
+
+    public function exercise_reset_handler($data)
+    {
+        $user = $this->container['current_user'];
+        parse_str($data, $requestData);
+        $exercise_id = $requestData['exercise_id'];
+
+        if($this->assignment_id == "") {
+            if ($this->test_id != "") {
+                $assignment = \VipsAssignment::findOneBySQL('test_id = ?', array($this->test_id));
+                $test_id = $this->test_id;
+            }
+        } else {
+            $assignment = \VipsAssignment::find($this->assignment_id);
+            $test_id = $assignment->test->id;
+        }
+
+        check_test_access($test_id);
+        $now = time();
+        $start = strtotime($assignment->start);
+        $end = strtotime($assignment->end);
+
+        // not yet started or already ended
+        if ($start > $now || $now > $end) {
+            throw new \Exception(_cw('Das Aufgabenblatt kann zur Zeit nicht bearbeitet werden.'));
+        }
+
+        // resetting tries
+        if(!$this->tries) {
+            $local_tries = array();
+        } else {
+            $local_tries = $this->tries;
+        }
+        if ($local_tries) {
+            $local_tries[$exercise_id] = 0;
+            $this->tries = $local_tries;
+        }
+        $assignment->deleteSolution($user->id, $exercise_id);
+        $this->calcGrades();
 
         return array();
     }
 
-    /**
-     * {@inheritdoc}
-     */
+    public function calcGrades()
+    {
+        global $user;
+
+        if($this->assignment_id == "") {
+            if ($this->test_id != "") {
+                $test = \VipsTest::findOneBySQL('id = ?', array($this->test_id));
+                $assignment = \VipsAssignment::findOneBySQL('test_id = ?', array($this->test_id));
+            }
+        } else {
+            $assignment = \VipsAssignment::find($this->assignment_id);
+            $test = $assignment->test;
+        }
+
+        if($test == null) {
+            return null;
+        }
+        $progress = $this->getProgress();
+        $progress->max_grade = $test->getExerciseCount();
+        $progress->grade = 0;
+
+        foreach ($test->getExercises() as $exercise) {
+            $solution = \VipsSolution::findOneBySQL('exercise_id = ? AND user_id = ?', array($exercise->id, $user->id));
+            $exercise_ref = \VipsExerciseRef::findOneBySQL('exercise_id = ?', array($exercise->id));
+            $correct = $solution ? ($exercise_ref['points']== $solution->points) : false;
+            if (($assignment->type != 'selftest')&&($solution != '')) {
+                $correct = true;
+            } 
+            if ($correct) {
+                $progress->grade++;
+            }
+        }
+
+        return $progress;
+     }
+
+    private function buildExercises()
+    {
+        global $user;
+
+        $exercises = array();
+        $available = false;
+        if($this->assignment_id == "") {
+            if ($this->test_id != "") {
+                $test = \VipsTest::findOneBySQL('id = ?', array($this->test_id));
+                $assignment = \VipsAssignment::findOneBySQL('test_id = ?', array($this->test_id));
+            }
+        } else {
+            $assignment = \VipsAssignment::find($this->assignment_id);
+            $test = $assignment->test;
+        }
+        $numberofex = $test->getExerciseCount();
+        $exindex = 1;
+        $now = time();
+        $start = strtotime($assignment->start);
+        $end = strtotime($assignment->end);
+        $solving_allowed = ($now >= $start) && ($now <= $end);
+        $solved_completely = true;
+
+        foreach ($test->getExercises() as $exercise){
+            $solution = \VipsSolution::findOneBySQL('exercise_id = ? AND user_id = ?', array($exercise->id, $user->id));
+            $has_solution = $solution != null;
+            $correct = false;
+            $tryagain = false;
+            $try_counter = 0;
+
+            if (($assignment->type == 'selftest')&& $has_solution) {
+                $evaluation = $exercise->evaluate($solution);
+                $correct = $evaluation['percent'] == 1;
+                if(!$this->tries) {
+                    $local_tries = array();
+                } else {
+                    $local_tries = $this->tries;
+                }
+                $try_counter = $local_tries[$exercise->getId()];
+                $tryagain = $solution && !$correct;
+                $tb_exercise = false;
+
+                if ($exercise->type == "tb_exercise") {
+                    $tb_exercise = true;
+                    $tryagain = false;
+                    $correct = true;
+                }
+            }
+            if ($correct ==  false) {
+                 $solved_completely = false;
+            }
+            $tries_left = -1;
+            $courseware_block = $this->container['current_courseware'];
+            $max_counter = $courseware_block->getMaxTries();
+            if(!$max_counter) {
+                // no max counter, do as before
+                $show_corrected_solution = $correct;
+            } else if ($max_counter === -1) {
+                // unlimited tries to answer
+                $show_corrected_solution = $correct;
+            } else {
+                // limited tries
+                $tries_left = $max_counter - $try_counter;
+                $show_corrected_solution = ($correct || (($tries_left < 1) && ($assignment->type == 'selftest') ));
+            }
+            $tries_pl = false;
+            if ($tries_left > 1) {
+                $tries_pl = true;
+            }
+
+            if($has_solution && $solution['corrected']) {
+                $corrector_comment = $solution['corrector_comment'];
+            }
+
+            if ( $exercise->task['answers'][0]['text'] !== '') {
+                $sample_solution = $exercise->task['answers'][0]['text'];
+            } else {
+                $sample_solution = false;
+            }
+
+            if ($tries_left == -1) {
+                $tries_left = false;
+            }
+
+            if (in_array($exercise->type, array('lt_exercise', 'tb_exercise', 'cloze_exercise'))) {
+                $character_picker = true;
+            } else {
+                $character_picker = false;
+            }
+
+            $entry = array(
+                'exercise_type'       => $exercise->type,
+                'tb_exercise'         => $tb_exercise,
+                'id'                  => $exercise->getId(),
+                'test_id'             => $this->test_id,
+                'self_test'           => $assignment->type == 'selftest',
+                'exercise_sheet'      => $assignment->type == 'practice',
+                'show_correction'     => $assignment->type == 'selftest',
+                'show_solution'       => $has_solution && $show_corrected_solution,
+                'title'               => $exercise->title,
+                'question'            => $exercise->getSolveTemplate($solution, $assignment, $user->id)->render(),
+                'question_description'=> formatReady($exercise->description),
+                'single-choice'       => get_class($exercise) == 'sc_exercise',
+                'multiple-choice'     => get_class($exercise) == 'mc_exercise',
+                'solver_user_id'      => $user->id,
+                'has_solution'        => $has_solution,
+                'solution'            => $exercise->getCorrectionTemplate($solution)->render(),
+                'solving_allowed'     => $solving_allowed,
+                'number_of_exercises' => $numberofex,
+                'exercise_index'      => $exindex++,
+                'correct'             => $correct,
+                'tryagain'            => $tryagain,
+                'exercise_hint'       => $exercise->options['hint'],
+                'corrector_comment'   => $corrector_comment, 
+                'sample_solution'     => $sample_solution,
+                'is_corrected'        => $solution['corrected'],
+                'tries_left'          => $tries_left, 
+                'tries_pl'            => $tries_pl,
+                'character_picker'    => $character_picker,
+                'file_upload'         => $exercise->options['file_upload']
+            );
+            $entry['skip_entry'] = !$entry['show_solution'] && !$entry['solving_allowed'];
+            $available = !$entry['show_solution'] && !$entry['solving_allowed']; //or correction is available
+            $exercises[] = $entry;
+        }
+
+        $exercises_available = false;
+        foreach ($exercises as $ex) {
+            if (!$ex['skip_entry']) {
+                $exercises_available = true;
+                break;
+            }
+        }
+        $correction_available = false;
+        foreach ($exercises as $ex) {
+            if ($ex['is_corrected']) {
+                $correction_available = true;
+                break;
+            }
+        }
+
+        return array(
+            'title'                => $test->title,
+            'description'          => formatReady($test->description),
+            'exercises'            => $exercises,
+            'available'            => $available,
+            'exercises_available'  => $exercises_available,
+            'solved_completely'    => $solved_completely, 
+            'isSequential'         => $this->container['current_courseware']->getProgressionType() == 'seq',
+            'correction_available' => $correction_available
+        );
+    }
+
+    private function getAttrArray() 
+    {
+        return array(
+            'test_id' => $this->test_id,
+            'assignment_id' => $this->assignment_id,
+        );
+    }
+
     public function exportProperties()
     {
-        $options = json_decode($this->test->options);
-        $properties = array(
-            'test-id' => (int) $this->test->id,
-            'type' => $this->test->type,
-            'title' => $this->test->title,
-            'halted' => $this->test->halted == 1 ? 'true' : 'false',
-            'evaluation-mode' => (int) $options->evaluation_mode,
+        if ($this->assignment_id == "") {
+            $courseware = $this->container['current_courseware'];
+            if ( ($this->test_id == "") ||  !($courseware->vipsVersion()) ){
+                return;
+            }
+            $assignment = \VipsAssignment::findOneBySQL('test_id = ?', array($this->test_id));
+            if ($assignment == null) {
+                return;
+            }
+        } else {
+            $assignment = \VipsAssignment::find($this->assignment_id);
+        }
+        $xml = $assignment->exportXML();
+
+        return array(
+            'xml' => studip_utf8decode($xml)
         );
-
-        if ($options->shuffle_answers) {
-            $properties['shuffle-answers'] = 'true';
-        } else {
-            $properties['shuffle-answers'] = 'false';
-        }
-
-        if ($options->printable) {
-            $properties['printable'] = 'true';
-        } else {
-            $properties['printable'] = 'false';
-        }
-
-        if ($options->released) {
-            $properties['released'] = 'true';
-        } else {
-            $properties['released'] = 'false';
-        }
-
-        if ($this->test->start != '0000-00-00 00:00:00') {
-            $properties['start'] = date('Y-m-d\TH:i:s', strtotime($this->test->start));
-        }
-
-        if ($this->test->end != '0000-00-00 00:00:00') {
-            $properties['end'] = date('Y-m-d\TH:i:s', strtotime($this->test->end));
-        }
-
-        return $properties;
     }
 
     /**
@@ -283,344 +472,11 @@ class TestBlock extends Block
      */
     public function importProperties(array $properties)
     {
-        /** @var \Seminar_User $user */
-        global $user;
-
-        $importedTestId = $properties['test-id'];
-
-        // no test included in the import format
-        if ($importedTestId <= 0) {
-            $this->test_id = null;
-            $this->save();
-
-            return;
+        if (isset($properties['xml'])) {
+            $xml = studip_utf8encode($properties['xml']);
+            $result = \VipsAssignment::importXML($xml, $this->container['current_user_id'] , $this->container['cid']);
+            $this->assignment_id = $result->id;
         }
-
-        $courseId = $this->getModel()->course->id;
-
-        // the test being imported has already been imported, reuse it
-        if (isset(static::$importedTests[$courseId][$importedTestId])) {
-            $this->test = new Test(static::$importedTests[$courseId][$importedTestId]);
-            $this->test_id = $this->test->id;
-            $this->save();
-
-            return;
-        }
-
-        // create a new test and set all of its properties that are present
-        // at this step
-        $options = new \stdClass();
-        $options->evaluation_mode = $properties['evaluation-mode'];
-
-        if ($properties['shuffle-answers'] == 'true') {
-            $options->shuffle_answers = true;
-        } else {
-            $options->shuffle_answers = false;
-        }
-
-        if ($properties['printable'] == 'true') {
-            $options->printable = true;
-        } else {
-            $options->printable = false;
-        }
-
-        if ($properties['released'] == 'true') {
-            $options->released = true;
-        } else {
-            $options->released = false;
-        }
-
-        $test = new Test();
-        $test->type = $properties['type'];
-        $test->course_id = $courseId;
-        $test->position = VipsBridge::findNextVipsPosition($courseId);
-        $test->title = $properties['title'];
-        $test->description = '';
-        $test->user_id = $user->cfg->getUserId();
-        $test->options = json_encode($options);
-
-        if ($properties['halted'] == 'true') {
-            $test->halted = 1;
-        } else {
-            $test->halted = 0;
-        }
-
-        if (isset($properties['start'])) {
-            $test->start = date('Y-m-d H:i:s', strtotime($properties['start']));
-        } else {
-            $test->start = date('Y-m-d H:i:s');
-        }
-
-        if (isset($properties['end'])) {
-            $test->end = date('Y-m-d H:i:s', strtotime($properties['end']));
-        } else {
-            $test->end = date('Y-m-d H:i:s');
-        }
-
-        $test->store();
-        $this->test = $test;
-        $this->test_id = $test->id;
-        static::$importedTests[$courseId][$importedTestId] = $test->id;
         $this->save();
-    }
-
-    /**
-     * Exports the block as a list of XML DOM node objects.
-     *
-     * @param \DOMDocument $document The document the nodes are created for
-     * @param string       $alias    The namespace alias to be used to prefix
-     *                               generated node names
-     *
-     * @return \DOMNode[] The generated nodes
-     */
-    public function exportContentsForXml(\DOMDocument $document, $alias)
-    {
-        if ($this->test->id == 0) {
-            return array();
-        }
-
-        $descriptionNode = $document->createElement($alias.':description', $this->test->description);
-        $exercisesNode = $document->createElement($alias.':exercises');
-
-        foreach ($this->test->exercises as $exercise) {
-            /** @var \Mooc\UI\TestBlock\Model\Exercise $exercise */
-
-            $exerciseNode = $document->createElement($alias.':exercise');
-            $idNode = $document->createAttribute('id');
-            $idNode->value = $exercise->ID;
-            $exerciseNode->appendChild($idNode);
-            $nameNode = $document->createAttribute('name');
-            $nameNode->value = utf8_encode($exercise->name);
-            $exerciseNode->appendChild($nameNode);
-            $typeNode = $document->createAttribute('type');
-            $typeNode->value = $exercise->URI;
-            $exerciseNode->appendChild($typeNode);
-
-            $exerciseContent = new \DOMDocument();
-            $exerciseContent->loadXML(utf8_encode($exercise->Aufgabe));
-            $this->importNode($exerciseContent->documentElement, $exerciseNode, $alias);
-
-            $exercisesNode->appendChild($exerciseNode);
-        }
-
-        return array($descriptionNode, $exercisesNode);
-    }
-
-    /**
-     * Handles the import of the block's contents through XML.
-     *
-     * @param \DOMNode $node  The block's DOM node
-     * @param string   $alias The namespace alias to be used to prefix
-     *                        generated node names
-     */
-    public function importContentsFromXml(\DOMNode $node, $alias)
-    {
-        if ($this->test->id === null) {
-            return;
-        }
-
-        $courseId = $this->getModel()->course->id;
-        $xpath = new \DOMXPath($node->ownerDocument);
-
-        $description = $xpath->query('./'.$alias.':description', $node);
-        if ($description->length === 1) {
-            $this->test->description = utf8_decode($description->item(0)->textContent);
-            $this->test->store();
-        }
-
-        $exercises = $xpath->query('./'.$alias.':exercises/'.$alias.':exercise', $node);
-        if ($exercises->length > 0) {
-            foreach ($exercises as $exerciseData) {
-                if ($exerciseData instanceof \DOMNode) {
-                    $getAttribute = function ($name) use ($exerciseData) {
-                        return $exerciseData->attributes->getNamedItem($name)->nodeValue;
-                    };
-
-                    if (!isset(static::$importedExercises[$courseId][$this->test->id][$getAttribute('id')])) {
-                        $document = new \DOMDocument('1.0', 'utf-8');
-                        $this->importNode($xpath->query('./*', $exerciseData)->item(0), $document, $alias, true, true);
-
-                        $exercise = new Exercise();
-                        $exercise->Name = utf8_decode($getAttribute('name'));
-                        $exercise->Aufgabe = utf8_decode($document->saveXML());
-                        $exercise->URI = $getAttribute('type');
-                        $exercise->store();
-
-                        static::$importedExercises[$courseId][$this->test->id][$getAttribute('id')] = $exercise;
-                    }
-                }
-            }
-        }
-
-        // SimpleORMap can't handle many-to-many relationships with extra fields
-        $db = \DBManager::get();
-        $deleteStmt = $db->prepare('DELETE FROM vips_exercise_ref WHERE test_id = :test_id');
-        $deleteStmt->bindParam(':test_id', $this->test->id);
-        $deleteStmt->execute();
-        $insertStmt = $db->prepare(
-            'INSERT INTO
-              vips_exercise_ref
-            SET
-              exercise_id = :exercise_id,
-              test_id = :test_id,
-              position = :position'
-        );
-        $position = 1;
-        foreach (static::$importedExercises[$courseId][$this->test->id] as $exercise) {
-            $insertStmt->bindParam(':exercise_id', $exercise->ID);
-            $insertStmt->bindParam(':test_id', $this->test->id);
-            $insertStmt->bindParam(':position', $position);
-            $insertStmt->execute();
-            $position++;
-        }
-    }
-
-    /**
-     * Recursively import a node tree either applying a namespace prefix to
-     * each node name or stripping it off.
-     *
-     * @param \DOMNode $node                      The node tree to import
-     * @param \DOMNode $parent                    The parent node where the
-     *                                            tree will be imported
-     * @param string   $alias                     The namespace prefix
-     * @param bool     $stripPrefix               Whether or not to strip off
-     *                                            the namespace prefix
-     * @param bool     $ignoreWhiteSpaceTextNodes Whether or not to ignore text
-     *                                            nodes that only consist of
-     *                                            whitespaces
-     */
-    private function importNode(\DOMNode $node, \DOMNode $parent, $alias, $stripPrefix = false, $ignoreWhiteSpaceTextNodes = false)
-    {
-        if ($node instanceof \DOMText) {
-            if ($ignoreWhiteSpaceTextNodes && trim($node->nodeValue) === '') {
-                return;
-            }
-
-            $textNode = new \DOMText($node->nodeValue);
-            $parent->appendChild($textNode);
-
-            return;
-        }
-
-        if ($parent instanceof \DOMDocument) {
-            $document = $parent;
-        } else {
-            $document = $parent->ownerDocument;
-        }
-
-        if ($stripPrefix && strpos($node->nodeName, $alias.':') === 0) {
-            $nodeName = substr($node->nodeName, strlen($alias) + 1);
-        } elseif ($stripPrefix) {
-            $nodeName = $node->nodeName;
-        } else {
-            $nodeName = $alias.':'.$node->nodeName;
-        }
-
-        $newNode = $document->createElement($nodeName);
-        $parent->appendChild($newNode);
-
-        foreach ($node->attributes as $attribute) {
-            $newAttribute = $document->createAttribute($attribute->nodeName);
-            $newAttribute->value = $attribute->value;
-            $newNode->appendChild($newAttribute);
-        }
-
-        foreach ($node->childNodes as $child) {
-            $this->importNode($child, $newNode, $alias, $stripPrefix, $ignoreWhiteSpaceTextNodes);
-        }
-    }
-
-    private function buildExercises()
-    {
-        /** @var \Seminar_User $user */
-        global $user;
-
-        $exercises = array();
-
-        if ($this->test) {
-            foreach ($this->test->exercises as $exercise) {
-                /** @var \Mooc\UI\TestBlock\Model\Exercise $exercise */
-
-                // skip unsupported exercise types
-                if ($exercise->getAnswersStrategy() === null) {
-                    continue;
-                }
-
-                $answers = $exercise->getAnswers($this->test, $user);
-                $userAnswers = $exercise->getUserAnswers($this->test, $user);
-                $entry = array(
-                    'exercise_type' => $exercise->getType(),
-                    $exercise->getType() => 1,
-                    'id' => $exercise->getId(),
-                    'test_id' => $this->test->getId(),
-                    'self_test' => $this->test->isSelfTest(),
-                    'exercise_sheet' => $this->test->isExerciseSheet(),
-                    'show_correction' => $this->test->showCorrection(),
-                    'show_solution' => $exercise->showSolutionFor($this->test, $user),
-                    'title' => $exercise->getTitle(),
-                    'question' => $exercise->getQuestion(),
-                    'answers' => $answers,
-                    'single-choice' => $exercise->isSingleChoice(),
-                    'multiple-choice' => $exercise->isMultipleChoice(),
-                    'solver_user_id' => $user->cfg->getUserId(),
-                    'has_solution' => $exercise->hasSolutionFor($this->test, $user),
-                    'solution' => $exercise->getAnswersStrategy()->getSolution($exercise->getVipsSolutionFor($this->test, $user)),
-                    'solving_allowed' => $exercise->solvingAllowed($this->test, $user),
-                    'number_of_answers' => count($answers),
-                    $exercise->getAnswersStrategy()->getTemplate() => true,
-                    'user_answers' => $userAnswers,
-                );
-                $entry['skip_entry'] = !$entry['show_solution'] && !$entry['solving_allowed'];
-                $exercises[] = $entry;
-            }
-        }
-
-        return array(
-            'title'       => $this->test->title,
-            'description' => nl2br(htmlReady($this->test->description)),
-            'exercises'   => $exercises
-        );
-    }
-
-    /**
-     * {@inheritdoc}
-     */
-    public static function additionalInstanceAllowed(Section $section, $subType = null)
-    {
-        return VipsBridge::vipsActivated($section);
-    }
-
-    private function loadRelatedTest()
-    {
-        if (VipsBridge::vipsExists()) {
-            $this->test = new Test($this->test_id);
-
-            // do not allow tests that belong to other courses
-            if ($this->test->course_id !== $this->_model->seminar_id) {
-                $this->test = null;
-            }
-
-            if (!$this->_model->isNew()) {
-                $progress = $this->getProgress();
-
-                // initialize the user progress (if necessary)
-                if ($progress->isNew()) {
-                    $progress->grade = 0;
-                    $progress->max_grade = count($this->test->exercises);
-                    $progress->store();
-                }
-
-                // fix the max grade value if the number of exercises had changed
-                if ($progress->max_grade != count($this->test->exercises)) {
-                    $progress->max_grade = count($this->test->exercises);
-
-                    if ($progress->grade > $progress->max_grade) {
-                        $progress->grade = $progress->max_grade;
-                    }
-
-                    $progress->store();
-                }
-            }
-        }
     }
 }

@@ -12,26 +12,38 @@ namespace Mooc\DB;
  * @property \User  $user
  * @property float  $grade
  * @property float  $max_grade
+ * @property float  $chdate
  */
 class UserProgress extends \SimpleORMap
 {
+    protected static function configure($config = array())
+    {
+        $config['db_table'] = 'mooc_userprogress';
+
+        $config['belongs_to']['block'] = array(
+            'class_name'  => 'Mooc\\DB\\Block',
+            'foreign_key' => 'block_id'
+        );
+
+        $config['belongs_to']['user'] = array(
+            'class_name'  => 'User',
+            'foreign_key' => 'user_id'
+        );
+
+        $config['registered_callbacks']['before_store'] = array(
+            'denyNobodyProgress'
+        );
+
+        parent::configure($config);
+    }
 
     public function __construct($id = null) {
-        $this->db_table = 'mooc_userprogress';
-
-        $this->belongs_to['block'] = array(
-            'class_name'  => 'Mooc\\DB\\Block',
-            'foreign_key' => 'block_id');
-
-        $this->belongs_to['user'] = array(
-            'class_name'  => 'User',
-            'foreign_key' => 'user_id');
-
         parent::__construct($id);
 
         if ($this->isNew()) {
             $this->grade = 0;
             $this->max_grade = 1;
+            $this->chdate = (new \DateTime())->format('Y-m-d H:i:s');
         }
     }
 
@@ -53,30 +65,14 @@ class UserProgress extends \SimpleORMap
         return $this->max_grade > 0 ? ($this->grade / $this->max_grade) : 0;
     }
 
-    /**
-     * Grade must be a float in [0..1]
-     *
-     * As as is usual with SimpleORMap this method gets called on
-     *
-     * \code
-     * $progress->grade = 0.5;
-     * \endcode
-     *
-     * @param float $grade a floating point number between 0.0 and and the
-     *                     value of the max_grade field
-     *
-     * @throws \InvalidArgumentException if the grade is not in the allowed
-     *                                   range
-     */
     protected function setGrade($grade)
     {
-        if ($this->max_grade === null || $this->max_grade == 0) {
-            $this->max_grade = 1;
-        }
-
-        if (!is_numeric($grade) || $grade < 0 || $grade > $this->max_grade) {
-            throw new \InvalidArgumentException('Grade must be within [0..'.$this->max_grade.'].');
-        }
         $this->content['grade'] = $grade;
+        $this->chdate = (new \DateTime())->format('Y-m-d H:i:s');
+    }
+
+    public function denyNobodyProgress()
+    {
+        return $this->content['user_id'] != 'nobody';
     }
 }

@@ -9,13 +9,17 @@ use Mooc\Import\XmlImport;
  *
  * @author Christian Flothmann <christian.flothmann@uos.de>
  */
-class ImportController extends MoocipController
+class ImportController extends CoursewareStudipController
 {
     public function before_filter(&$action, &$args)
     {
         parent::before_filter($action, $args);
-    }
 
+        if (!$this->container['current_user']->canCreate($this->container['current_courseware'])) {
+            throw new Trails_Exception(401);
+        }
+        Navigation::activateItem('course/mooc_courseware');
+    }
 
     public function index_action()
     {
@@ -40,7 +44,7 @@ class ImportController extends MoocipController
             $repo = new PluginRepository('http://content.moocip.de/?dispatch=xml');
             $module=$repo->getPlugin(Request::quoted('n'));
             if (!@copy($module['url'], $temp_name)) {
-                $this->msg = _('Das Herunterladen des Moduls ist fehlgeschlagen.');
+                $this->msg = _cw('Das Herunterladen des Moduls ist fehlgeschlagen.');
             }
             $this->installModule($temp_name);
         }
@@ -63,7 +67,7 @@ class ImportController extends MoocipController
         $dataFile = $tempDir.'/data.xml';
 
         if (!is_file($dataFile)) {
-            $errors[] = _('Import-Archiv enthält keine Datendatei data.xml.');
+            $errors[] = _cw('Import-Archiv enthält keine Datendatei data.xml.');
 
             return false;
         }
@@ -72,7 +76,7 @@ class ImportController extends MoocipController
         $validationErrors = $validator->validate(file_get_contents($dataFile));
 
         if (count($validationErrors) > 0) {
-            $errors[] = _('Die Datendatei data.xml enthält kein valides XML.');
+            $errors[] = _cw('Die Datendatei data.xml enthält kein valides XML.');
 
             foreach ($validationErrors as $validationError) {
                 $errors[] = $validationError;
@@ -84,23 +88,29 @@ class ImportController extends MoocipController
         return true;
     }
 
-    private function installModule($filename) {
+    private function installModule($filename)
+    {
         // create a temporary directory
         $tempDir = $GLOBALS['TMP_PATH'].'/'.uniqid();
         mkdir($tempDir);
         unzip_file($filename, $tempDir);
 
         if ($this->validateUploadFile($tempDir, $this->errors)) {
-            $coursewareBlock = Block::findCourseware(Request::get('cid'));
-            $courseware = $this->plugin->getBlockFactory()->makeBlock($coursewareBlock);
+            $courseware = $this->container['current_courseware'];
             $importer = new XmlImport($this->plugin->getBlockFactory());
-            $importer->import($tempDir, $courseware);
-
-            $this->redirect(PluginEngine::getURL($this->plugin, array(), 'courseware'));
+            $redirect = true;
+            try {
+                $importer->import($tempDir, $courseware);
+            } catch (Exception $e){
+                $this->errors[] = $e;
+                $redirect = false;
+            }
+            if($redirect){
+                $this->redirect(PluginEngine::getURL($this->plugin, array(), 'courseware'));
+            }
         }
 
         $this->deleteRecursively($tempDir);
-
     }
 
     private function deleteRecursively($path)

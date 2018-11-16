@@ -4,60 +4,55 @@ namespace Mooc\UI\DiscussionBlock;
 
 /**
  */
-class Discussion
+abstract class Discussion
 {
 
-    public function __construct($container, $block_id, $group)
+    public function __construct($cid, $user)
     {
-        $this->container = $container;
-        $this->block_id  = $block_id;
-        $this->group     = $group;
-        $this->thread    = $this->findOrCreateBlubberThread();
+        $this->cid    = $cid;
+        $this->user   = $user;
+        $this->thread = $this->findOrCreateBlubberThread();
     }
+
+    abstract protected function getDefaultDescription();
+
+    abstract protected function getDefaultName();
+
+    abstract protected function generateID();
 
     ////////////////////
     // PRIVATE HELPER //
     ////////////////////
 
-    private function generateThreadId()
+    private function generateMD5()
     {
-        $preid = sprintf('%s-%s',
-                         $this->block_id,
-                         isset($this->group)
-                           ? $this->group->id
-                           : 'null');
-
-        return md5($preid);
+        return md5($this->generateID());
     }
+
 
     private function findOrCreateBlubberThread()
     {
-        if (!$thread = \BlubberPosting::find($id = $this->generateThreadId())) {
-            $thread = $this->createBlubberThread($id);
+        if (!$thread = \BlubberPosting::find($this->generateMD5())) {
+            $thread = $this->createBlubberThread();
         }
 
         return $thread;
     }
 
 
-    private function createBlubberThread($thread_id)
+    private function createBlubberThread()
     {
-        $cid       = $this->container['cid'];
-        $author_id = $this->container['current_user_id'];
-        $content   = $this->group
-                   ? sprintf("Gruppendiskussion der Gruppe '%s'", $this->group->name)
-                   : "Gruppendiskussion";
-
+        $thread_id = $this->generateMD5();
         $thread = new \BlubberPosting($thread_id);
 
         $data = array(
             'context_type' => 'course',
             'root_id'      => $thread_id,
             'parent_id'    => 0,
-            'seminar_id'   => $cid,
-            'user_id'      => $author->id,
-            'name'         => $this->block_id . '-' . ($this->group ? $this->group->id : 'null'),
-            'description'  => $content
+            'seminar_id'   => $this->cid,
+            'user_id'      => $this->user->id,
+            'name'         => $this->getDefaultName(),
+            'description'  => $this->getDefaultDescription()
         );
         array_walk($data, function ($val, $key) use ($thread) { $thread[$key] = $val; });
 

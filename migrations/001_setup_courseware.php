@@ -9,14 +9,16 @@ require __DIR__.'/../vendor/autoload.php';
  */
 
 
-class SetupCourseware extends DBMigration {
+class SetupCourseware extends Migration
+{
 
-    public function description () {
+    public function description()
+    {
         return 'Setup tables for the mooc.ip courseware-plugin and adds editable display name of the plugin.';
     }
 
-    public function up () {
-      
+    public function up()
+    {
         $db = DBManager::get();
 
         // check if Mooc.IP is already installed and the schema-version of Mooc.IP
@@ -24,15 +26,13 @@ class SetupCourseware extends DBMigration {
         // if the schema-version is to old, do an exit rescue with an error message
         $version = $db->fetchColumn("SELECT version FROM schema_version WHERE domain = 'Mooc.IP'");
 
-        if ($version && $version >= 20) {
-            // tables are there, no further action needed
-            return;
-        } else if ($version && $version < 20) {
-            throw new Exception('Please upgrade your Mooc.IP-Plugin to at least Version 1.0.4 or deinstall it completely if you do not need it!');
+        // check if Mooc.IP has been upgraded to OpenCourses
+        if ($version && $version < 22) {
+            throw new Exception('Please upgrade your (M)OOC.IP-Plugin to Mooc.IP - OpenCourses (min. version 2.0.1) or deinstall it completely if you do not need it!');
         }
 
         // if no Mooc.IP-installion is found, create the courseware tables
-        
+
         $db->exec("CREATE TABLE IF NOT EXISTS `mooc_blocks` (
           `id` int(11) NOT NULL AUTO_INCREMENT,
           `type` varchar(64) NOT NULL,
@@ -63,7 +63,6 @@ class SetupCourseware extends DBMigration {
           PRIMARY KEY (`block_id`,`user_id`)
         )");
 
-
         if (is_null(Config::get()->getValue(\Mooc\PLUGIN_DISPLAY_NAME_ID))) {
             Config::get()->create(\Mooc\PLUGIN_DISPLAY_NAME_ID, array(
                 'value'       => 'Mooc.IP',
@@ -78,7 +77,7 @@ class SetupCourseware extends DBMigration {
         SimpleORMap::expireTableScheme();
     }
 
-    public function down ()
+    public function down()
     {
         // To avoid data loss, nothing is deleted by default
         // remove the following "return;"-statement to clean tables on uninstall
@@ -87,9 +86,9 @@ class SetupCourseware extends DBMigration {
         DBManager::get()->exec("DROP TABLE mooc_blocks");
         DBManager::get()->exec("DROP TABLE mooc_userprogress");
         DBManager::get()->exec("DROP TABLE mooc_fields");
-        
+
         Config::get()->delete(\Mooc\PLUGIN_DISPLAY_NAME_ID);
-        
+
         SimpleORMap::expireTableScheme();
     }
 }

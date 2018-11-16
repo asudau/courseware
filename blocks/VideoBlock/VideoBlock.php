@@ -10,33 +10,91 @@ use Mooc\UI\Block;
 class VideoBlock extends Block
 {
     const NAME = 'Video';
+    const BLOCK_CLASS = 'multimedia';
+    const DESCRIPTION = 'Spielt ein Video aus dem Dateibereich oder von einer URL ab';
 
-    const YOUTUBE_PATTERN = '/^.*(youtu.be\/|v\/|embed\/|watch\?|youtube.com\/|user\|watch\?|feature=player_embedded\&|\/[^#]*#([^\/]*?\/)*)\??v?=?([^#\&\?]*).*/i';
-
-    function initialize()
+    public function initialize()
     {
         $this->defineField('url', \Mooc\SCOPE_BLOCK, '');
+        $this->defineField('webvideo', \Mooc\SCOPE_BLOCK, '');
+        $this->defineField('webvideosettings', \Mooc\SCOPE_BLOCK, '');
+        $this->defineField('videoTitle', \Mooc\SCOPE_BLOCK, '');
+        $this->defineField('aspect', \Mooc\SCOPE_BLOCK, 'aspect-169');
     }
 
-    function student_view()
+    private function array_rep() {
+        return array(
+            'url'               => $this->url,
+            'webvideo'          => $this->webvideo, 
+            'webvideosettings'  => $this->webvideosettings, 
+            'videoTitle'        => $this->videoTitle,
+            'aspect'            => $this->aspect
+        );
+    }
+
+    public function student_view()
     {
-        // on view: grade with 100%
+        if (!$this->isAuthorized()) {
+            return array('inactive' => true);
+        }
         $this->setGrade(1.0);
+        $array = $this->array_rep();
+        $array['webvideo'] = json_decode($array['webvideo']);
 
-        return array('url' => $this->cleanUpYouTubeUrl($this->url));
+        return $array;
     }
 
-    function author_view()
+    public function author_view()
     {
-        return array('url' => $this->cleanUpYouTubeUrl($this->url));
+        $this->authorizeUpdate();
+        $video_files = $this->showFiles();
+        if (empty($video_files)) {
+            $video_files = false;
+        }
+
+        return array_merge($this->array_rep(), array(
+            'video_files' => $video_files
+        ));
     }
 
-    function save_handler($data)
+    public function save_handler($data)
     {
-        $this->requireUpdatableParent(array('parent' => $this->getModel()->parent_id));
+        $this->authorizeUpdate();
+        $this->url = (string) $data['url'];
+        $this->webvideo = (string) $data['webvideo'];
+        $this->webvideosettings = (string) $data['webvideosettings'];
+        $this->videoTitle = \STUDIP\Markup::purifyHtml((string) $data['videoTitle']);
+        $this->aspect = (string) $data['aspect'];
 
-        $this->url = static::cleanUpYouTubeUrl((string) $data['url']);
-        return array('url' => $this->url);
+        return $this->array_rep();
+    }
+
+    private function showFiles()
+    {
+        $db = \DBManager::get();
+        $stmt = $db->prepare('
+            SELECT 
+                * 
+            FROM 
+                dokumente 
+            WHERE 
+                seminar_id = :seminar_id
+            ORDER BY 
+                name
+        ');
+        $stmt->bindParam(':seminar_id', $this->container['cid']);
+        $stmt->execute();
+        $response = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $filesarray = array();
+        foreach ($response as $item) {
+            if ((strpos($item['filename'], 'mp4') > -1) || (strpos($item['filename'], 'webm') > -1) || (strpos($item['filename'], 'ogg') > -1)) {
+                $document = \StudipDocument::find($item['dokument_id']);
+                $item['download_url'] = \URLHelper::getURL( 'sendfile.php',  array('type'=>'0', 'file_id' => $document->id, 'file_name' => $document->name) );
+                $filesarray[] = $item;
+            }
+        }
+
+        return $filesarray;
     }
 
     /**
@@ -44,9 +102,32 @@ class VideoBlock extends Block
      */
     public function exportProperties()
     {
-        return array('url' => $this->url);
+        return $this->array_rep();
     }
 
+    public function getFiles()
+    {
+        if ($this->webvideo == '') {
+            return array();
+        }
+        $sources = json_decode($this->webvideo);
+        foreach ($sources as $source) {
+            if ($source->file_id != '') {
+                $document = new \StudipDocument($source->file_id);
+                $files[] = array(
+                    'id' => $source->file_id,
+                    'name' => $document->name,
+                    'description' => $document->description,
+                    'filename' => $document->filename,
+                    'filesize' => $document->filesize,
+                    'url' => $document->url,
+                    'path' => get_upload_file_path($source->file_id),
+                );
+            }
+        }
+
+        return $files;
+    }
     /**
      * {@inheritdoc}
      */
@@ -71,43 +152,40 @@ class VideoBlock extends Block
         if (isset($properties['url'])) {
             $this->url = $properties['url'];
         }
+        
+        if (isset($properties['webvideo'])) {
+            $this->webvideo = $properties['webvideo'];
+        }
+        
+        if (isset($properties['webvideosettings'])) {
+            $this->webvideosettings = $properties['webvideosettings'];
+        }
+
+        if (isset($properties['aspect'])) {
+            $this->aspect = $properties['aspect'];
+        }
+        
+        if (isset($properties['videoTitle'])) {
+            $this->videoTitle = $properties['videoTitle'];
+        }
 
         $this->save();
     }
 
-    /**
-     * Cleans up YouTube URLs if necessary.
-     *
-     * YouTube does not support URLs like http://www.youtube.com/watch?v=<ID>
-     * to be embedded in iframes. The URL pattern has to be
-     * http://www.youtube.com/embed/<ID>
-     *
-     * @param string $url The URL to clean up
-     *
-     * @return string The cleaned up URL
-     */
-    public static function cleanUpYouTubeUrl($url)
+    public function importContents($contents, array $files)
     {
-        if (!preg_match(self::YOUTUBE_PATTERN, $url)) {
-            return $url;
+        $webvideo = json_decode($this->webvideo);
+        foreach($files as $file){
+            foreach ($webvideo as &$source) {
+                if(($source->file_name == $file->name) && ($source->file_id != '')) {
+                    $source->file_id = $file->id;
+                    $document = \StudipDocument::find($file->id);
+                    $source->src = \URLHelper::getURL( 'sendfile.php',  array('type'=>'0', 'file_id' => $document->id, 'file_name' => $document->name) );
+                }
+            }
         }
+        $this->webvideo = json_encode($webvideo);
 
-        $parts = parse_url($url);
-
-        if (!isset($parts['query'])) {
-            return $url;
-        }
-
-        parse_str($parts['query'], $params);
-        $parts['path'] = '/embed/'.$params['v'];
-        unset($params['v']);
-
-        $url = $parts['scheme'].'://'.$parts['host'].$parts['path'];
-
-        if (count($params) > 0) {
-            $url .= '?'.http_build_query($params);
-        }
-
-        return $url;
+        $this->save();
     }
 }

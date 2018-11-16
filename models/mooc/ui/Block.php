@@ -1,9 +1,11 @@
 <?php
 namespace Mooc\UI;
 
-use Mooc\Container;
+use Courseware\Container;
 use Mooc\DB\Field;
 use Mooc\DB\UserProgress;
+use Mooc\UI\Section\Section;
+use Mooc\UI\Courseware\Courseware;
 
 /**
  * Objects of this class represent a UI component bundling model, view
@@ -131,12 +133,12 @@ abstract class Block {
     // TODO
     function __set($name, $value)
     {
-        // `id` darf nicht geändert werden
+        // `id` darf nicht geÃ¤ndert werden
         if ('id' === $name) {
             throw new \InvalidArgumentException("Cannot mutate attribute 'id'.");
         }
 
-        // `title` wird direkt im SORM-Objekt geändert
+        // `title` wird direkt im SORM-Objekt geÃ¤ndert
         if ('title' === $name) {
             $this->_model->title = $value;
             $this->_model->store();
@@ -209,6 +211,8 @@ abstract class Block {
      * the fields of this block, and returns the return value of the
      * called method.
      *
+     * To report an error just throw one of the \Mooc\UI\Errors.
+     *
      * @param string $view_name the name of the view to call
      * @param array  $context   The execution context
      *
@@ -223,14 +227,9 @@ abstract class Block {
             throw new Errors\BadRequest('No such view.');
         }
 
-        $timer = \Metrics::startTimer();
-
         $data = $this->$view_method($context);
         $this->save();
         $result = $this->container['block_renderer']($this, $view_name, $data);
-
-        $key = sprintf('moocip.block.%s.render.%s', strtolower($this->getModel()->type), strtolower($view_name));
-        $timer($key, 0.1);
 
         return $result;
     }
@@ -238,7 +237,7 @@ abstract class Block {
     public function traverseChildren($callback) {
         $results = array();
 
-        foreach ($this->_model->children as $child_model) {
+        foreach ($this->_model->getContentChildren() as $child_model) {
             $child = $this->getBlockFactory()->makeBlock($child_model);
             if ($child) {
                 $results[] = $callback($child, $this->container);
@@ -257,13 +256,13 @@ abstract class Block {
             throw new Errors\BadRequest("No such handler");
         }
 
-        $timer = \Metrics::startTimer();
-
         $result = call_user_func_array($handler, array_slice(func_get_args(), 1));
         $this->save();
 
-        $key = sprintf('moocip.block.%s.handle.%s', strtolower($this->getModel()->type), strtolower($name));
-        $timer($key);
+        if ($name == 'save') {
+            $this->_model->chdate = time();
+            $this->_model->store();
+        }
 
         return $result;
     }
@@ -293,7 +292,7 @@ abstract class Block {
             $readableName .= ' ('.$subTypes[$this->_model->sub_type].')';
         }
 
-        return $readableName;
+        return _cw($readableName);
     }
 
     /**
@@ -315,6 +314,7 @@ abstract class Block {
         $json['fields'] = $this->getFields();
         $json['readable_name'] = $this->getReadableName();
         $json['editable'] = $this->isEditable();
+
         return $json;
     }
 
@@ -422,7 +422,7 @@ abstract class Block {
      *
      * @return bool True if a new block instance is allowed, false otherwise
      */
-    public static function additionalInstanceAllowed()
+    public static function additionalInstanceAllowed($container, Section $section, $subType = null)
     {
         return true;
     }
@@ -497,6 +497,9 @@ abstract class Block {
     // TODO
     public function save()
     {
+        if ($this->container['current_user']->isNobody()) {
+            return;
+        }
         foreach ($this->_fields as $field) {
             $field->store();
         }
@@ -504,6 +507,14 @@ abstract class Block {
         // save the progress if there is one
         if (isset($this->_progress)) {
             $this->_progress->store();
+        }
+    }
+
+    // enforce current user with 'canUpdate' permission of this block
+    protected function authorizeUpdate()
+    {
+        if (!$this->container['current_user']->canUpdate($this)) {
+            throw new Errors\AccessDenied(_cw("Sie sind nicht berechtigt diesen Block zu editieren."));
         }
     }
 
@@ -545,5 +556,62 @@ abstract class Block {
     protected function getCurrentUser()
     {
         return $this->container['current_user'];
+    }
+
+    protected function isAuthorized()
+    {
+
+        // on sequential courseware progression a student may only
+        // access this section if he completed this or the previous
+        // sub/chapter
+        if (!$this->container['current_user']->canUpdate($this)) {
+            $courseware = $this->container['current_courseware'];
+            if ($courseware->getProgressionType() === Courseware::PROGRESSION_SEQ && !$this->checkSeqCompletion()) {
+                return false;
+            }
+        }
+
+        // else user may access this section
+        return true;
+    }
+
+    protected function checkSeqCompletion()
+    {
+        $uid = $this->container['current_user_id'];
+        if ($this->_model->type == "Section") {
+            $sub = $this->_model->parent;
+        } else {
+            $sub = $this->_model->parent->parent;
+        }
+        // TODO: solve in a more elegant way
+        if (!$sub) {
+            return true;
+        }
+        // proceed if this subchapter has been completed by this user
+        if ($sub->hasUserCompleted($uid)) {
+            return true;
+        }
+        // else check the previous (sub)chapter for completion
+        else {
+
+            // get previous subchapter
+            $previous = $sub->previousSibling();
+
+            // if this section's subchapter is the first of the
+            // chapter, there is no previous subchapter. Get the
+            // previous chapter instead.
+            if (!$previous) {
+                $previous = $sub->parent->previousSibling();
+            }
+
+            // if there is no previous chapter, this section is
+            // the very first
+            if (!$previous) {
+                return true;
+            }
+
+            // else check the previous (sub)chapter for completion
+            return $previous->hasUserCompleted($uid);
+        }
     }
 }

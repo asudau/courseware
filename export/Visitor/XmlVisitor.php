@@ -46,7 +46,13 @@ class XmlVisitor extends AbstractVisitor
      */
     public function startVisitingCourseware(Courseware $courseware)
     {
-        $this->enterNode($this->appendBlockNode('courseware', $courseware->title));
+        $this->enterNode(
+            $this->appendBlockNode('courseware',
+                                   $courseware->title,
+                                   array(
+                                       $this->createAttributeNode('progression', $courseware->progression),
+                                   ))
+        );
         $this->addNamespace($courseware->getXmlNamespace(), $courseware->getXmlSchemaLocation());
         $this->addNamespace(
             'http://www.w3.org/2001/XMLSchema-instance',
@@ -72,7 +78,7 @@ class XmlVisitor extends AbstractVisitor
             $fileNode = $this->appendBlockNode('file', null, $attributes);
 
             if (trim($file['description']) !== '') {
-                $fileNode->appendChild($this->document->createCDATASection(utf8_encode($file['description'])));
+                $fileNode->appendChild($this->document->createCDATASection(studip_utf8encode($file['description'])));
             }
         }
     }
@@ -92,6 +98,15 @@ class XmlVisitor extends AbstractVisitor
     {
         $this->enterNode($this->appendBlockNode('chapter', $chapter->title));
 
+        // visit a potential aside section
+        $aside_field = \Mooc\DB\Field::find(array($chapter->id, '', 'aside_section'));
+        if ($aside_field) {
+            if ($aside_block = \Mooc\DB\Block::find($aside_field->content)) {
+                $section = $this->blockFactory->makeBlock($aside_block);
+                $this->startVisitingAsideSection($section);
+                $this->endVisitingAsideSection($section);
+            }
+        }
         foreach ($chapter->children as $chapter) {
             $this->startVisitingSubChapter($chapter);
             $this->endVisitingSubChapter($chapter);
@@ -112,6 +127,15 @@ class XmlVisitor extends AbstractVisitor
     public function startVisitingSubChapter(Block $subChapter)
     {
         $this->enterNode($this->appendBlockNode('subchapter', $subChapter->title));
+        // visit a potential aside section
+        $aside_field = \Mooc\DB\Field::find(array($subChapter->id, '', 'aside_section'));
+        if ($aside_field) {
+            if ($aside_block = \Mooc\DB\Block::find($aside_field->content)) {
+                $section = $this->blockFactory->makeBlock($aside_block);
+                $this->startVisitingAsideSection($section);
+                $this->endVisitingAsideSection($section);
+            }
+        }
 
         foreach ($subChapter->children as $block) {
             $section = $this->blockFactory->makeBlock($block);
@@ -155,6 +179,30 @@ class XmlVisitor extends AbstractVisitor
     /**
      * {@inheritdoc}
      */
+    public function startVisitingAsideSection(Section $section)
+    {
+        $this->enterNode($this->appendBlockNode('asidesection', $section->title, array(
+            $this->createAttributeNode('icon', $section->icon),
+        )));
+
+        foreach ($section->getModel()->children as $block) {
+            $uiBlock = $this->blockFactory->makeBlock($block);
+            $this->startVisitingBlock($uiBlock);
+            $this->endVisitingBlock($uiBlock);
+        }
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function endVisitingAsideSection(Section $section)
+    {
+        $this->leaveNode();
+    }
+
+    /**
+     * {@inheritdoc}
+     */
     public function startVisitingBlock(\Mooc\UI\Block $block)
     {
         $alias = null;
@@ -173,12 +221,20 @@ class XmlVisitor extends AbstractVisitor
             }
 
             $this->addNamespace($namespace, $schemaLocation, $alias);
+
+            if (method_exists($block, 'exportAdditionalNamespaces')) {
+                foreach ($block->exportAdditionalNamespaces() as $args) {
+                    list($addNamespace, $addSchemaLocation, $addAlias) = $args;
+                    $this->addNamespace($addNamespace, $addSchemaLocation, $addAlias);
+                }
+            }
         }
 
         $properties = $block->exportProperties();
         $attributes = array();
         $attributes[] = $this->createAttributeNode('type', $block->getModel()->type);
         $attributes[] = $this->createAttributeNode('sub-type', $block->getModel()->sub_type);
+        $attributes[] = $this->createAttributeNode('uuid', $block->getModel()->getUUID());
 
         foreach ($properties as $name => $value) {
             if ($alias !== null) {
@@ -200,7 +256,7 @@ class XmlVisitor extends AbstractVisitor
             $contents = $block->exportContents();
 
             if ($contents !== null) {
-                $blockNode->appendChild($this->document->createCDATASection(utf8_encode($contents)));
+                $blockNode->appendChild($this->document->createCDATASection(studip_utf8encode($contents)));
             }
         }
     }
@@ -307,7 +363,7 @@ class XmlVisitor extends AbstractVisitor
     private function createAttributeNode($name, $value)
     {
         $attribute = $this->document->createAttribute($name);
-        $attribute->value = htmlspecialchars(utf8_encode($value));
+        $attribute->value = htmlspecialchars(studip_utf8encode($value));
 
         return $attribute;
     }

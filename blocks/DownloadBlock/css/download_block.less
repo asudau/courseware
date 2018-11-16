@@ -1,0 +1,58 @@
+@import '../../../assets/less/mixins';
+
+.DownloadBlock {
+    border: solid thin #d8d8d8;
+    padding: 10px;
+}
+
+.cw-download-info { 
+    .assets-bg-icon("blue/file.svg");
+    background-repeat: no-repeat;
+    background-size: 24px;
+    padding-left: 26px;
+    line-height: 24px; 
+    margin-top: 4px;
+    
+    span {
+        color: lightgrey;
+    }
+}
+
+.cw-download-button-wrapper {
+    text-align: right;
+    margin-top: -2em;
+    
+    .cw-download-button {
+        .courseware-btn;
+        height: 35px;
+        background-position: 16px center;
+        font-size: 14px;
+        padding-left: 48px;
+        padding-right: 20px;;
+        display: inline-block;
+        .assets-bg-icon("blue/download.svg");
+        background-repeat: no-repeat;
+        
+        &:hover{
+            .assets-bg-icon("white/download.svg");
+        }
+    }
+}
+
+/* sidebar special */
+.cw-sidebar {
+    .DownloadBlock {
+        padding: 0;
+        .cw-download-title {
+            .cw-block-header-sidebar();
+        }
+
+        .cw-download-info {
+            overflow: hidden;
+        }
+        
+        .cw-download-button-wrapper {
+            margin: 1em;
+        }
+    }
+}

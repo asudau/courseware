@@ -12,7 +12,7 @@ class CoursewareFactory
     /**
      * Constructs a new CoursewareFactory
      *
-     * @param \Mooc\Container $c  the DI container to use
+     * @param \Courseware\Container $c  the DI container to use
      */
     public function __construct($c)
     {
@@ -29,6 +29,9 @@ class CoursewareFactory
      */
     public function makeCourseware($cid)
     {
+        if ($cid == null) {
+            return false;
+        }
         // try to find it first
         $courseware = Block::findCourseware($cid);
 
@@ -42,10 +45,10 @@ class CoursewareFactory
 
     private function createCourseware($cid)
     {
-        $courseware = $this->createGenericBlock($cid, 'Courseware', _('Courseware'));
+        $courseware = $this->createGenericBlock($cid, 'Courseware', _cw('Courseware'));
 
-        $this->createChapter($courseware, _("Kapitel") . " 1");
-        $this->createChapter($courseware, _("Kapitel") . " 2");
+        $this->createChapter($courseware, _cw("Kapitel") . " 1");
+        $this->createChapter($courseware, _cw("Kapitel") . " 2");
 
         return $courseware;
     }
@@ -53,8 +56,7 @@ class CoursewareFactory
     private function createChapter($courseware, $title)
     {
         $chapter = $this->createGenericBlock($courseware, 'Chapter', $title);
-
-        $this->createSubchapter($chapter, _("Unterkapitel 1"));
+        $this->createSubchapter($chapter, _cw("Unterkapitel 1"));
 
         return $chapter;
     }
@@ -62,9 +64,8 @@ class CoursewareFactory
     private function createSubchapter($chapter, $title)
     {
         $subchapter = $this->createGenericBlock($chapter, 'Subchapter', $title);
-
-        $this->createSection($subchapter, _("Abschnitt 1"));
-        $this->createSection($subchapter, _("Abschnitt 2"));
+        $this->createSection($subchapter, _cw("Abschnitt 1"));
+        $this->createSection($subchapter, _cw("Abschnitt 2"));
 
         return $subchapter;
     }
@@ -72,8 +73,7 @@ class CoursewareFactory
     private function createSection($subchapter, $title)
     {
         $section = $this->createGenericBlock($subchapter, 'Section', $title);
-
-        $this->createHtmlBlock($section, _("Name des HTML-Blocks"));
+        $this->createHtmlBlock($section, _cw("Name des HTML-Blocks"));
 
         return $section;
     }
@@ -99,7 +99,8 @@ class CoursewareFactory
             'seminar_id' => $seminar_id,
             'parent_id'  => $parent_id,
             'type'       => $type,
-            'title'      => $title
+            'title'      => $title,
+            'position'   => $block->getNewPosition($parent_id)
         ));
 
         $block->store();

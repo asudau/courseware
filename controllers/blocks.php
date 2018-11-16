@@ -1,6 +1,6 @@
 <?php
 
-class BlocksController extends MoocipController {
+class BlocksController extends CoursewareStudipController {
 
     function before_filter(&$action, &$args)
     {
@@ -18,7 +18,8 @@ class BlocksController extends MoocipController {
         if ($this->acceptsJSON() || !$ui_block) {
             $json = $block->toArray();
 
-
+            // FIXME: braucht irgendwer die children? Ich hab noch
+            // keine Stelle gefunden.
             $json['children'] = array();
             foreach ($block->children as $child) {
                 // TODO: Was genau braucht man von den Kindern?
@@ -26,27 +27,20 @@ class BlocksController extends MoocipController {
             }
 
             // TODO: mlunzena: Warum sollten nicht-UI-Blöcke keine
-            // Fields haben?
+            // Fields oder Grades haben?
             if ($ui_block) {
                 $json['fields'] = $ui_block->getFields();
+                $json['grade'] = $ui_block->getProgress()->grade;
             }
-
-            $json['grade'] = $ui_block->getProgress()->grade;
 
             $this->render_json($json);
         }
 
         // wants HTML
         else {
-
-            $view = $this->getViewParam();
-            $context = clone Request::getInstance();
-
-            $this->response->add_header('Content-Type', 'text/html;charset=windows-1252');
-            $this->render_text($ui_block->render($view, $context));
+            $this->callBlockView($ui_block, $this->getViewParam(), clone Request::getInstance());
         }
     }
-
 
     function post($id)
     {
@@ -70,7 +64,6 @@ class BlocksController extends MoocipController {
         $this->callBlockHandler($ui_block, $this->data['handler'], $this->data['data']);
     }
 
-
     function put($id)
     {
         // JSON requests only
@@ -93,9 +86,8 @@ class BlocksController extends MoocipController {
 
         $block = $this->requireBlock($id);
 
-        if (!$this->plugin->getCurrentUser()->canUpdate($block->parent)) {
+        if (!$this->plugin->getCurrentUser()->canUpdate($block)) {
             $this->json_error('Access Denied', 401);
-
             return;
         }
 
@@ -111,7 +103,6 @@ class BlocksController extends MoocipController {
         }
     }
 
-
     function delete($id)
     {
         // JSON requests only
@@ -124,7 +115,6 @@ class BlocksController extends MoocipController {
 
         if (!$this->plugin->getCurrentUser()->canDelete($block)) {
             $this->json_error('Access Denied', 401);
-
             return;
         }
 
@@ -144,6 +134,7 @@ class BlocksController extends MoocipController {
             throw new Trails_Exception(404);
         }
 
+        // FIXME: Ist es nötig cid und block->seminar_id zu überprüfen?
         if ($block->seminar_id === $this->plugin->getCourseId()) {
             // häh?
         }
@@ -155,7 +146,6 @@ class BlocksController extends MoocipController {
         return $block;
     }
 
-
     /**
      * Extracts action and args from a string.
      *
@@ -164,17 +154,18 @@ class BlocksController extends MoocipController {
      * @return array        an array with two elements - a string containing the
      *                      action and an array of strings representing the args
      */
-    function extract_action_and_args($string) {
+    function extract_action_and_args($string)
+    {
         return array($this->get_verb(), explode('/', $string));
     }
 
-
-    function map_action($action) {
+    function map_action($action)
+    {
         return array(&$this, strtolower($action));
     }
 
-
-    function get_verb() {
+    function get_verb() 
+    {
 
         $verb = strtoupper(isset($_REQUEST['_method'])
         ? $_REQUEST['_method'] : @$_SERVER['REQUEST_METHOD']);
@@ -186,6 +177,25 @@ class BlocksController extends MoocipController {
         return $verb;
     }
 
+    private function callBlockView($ui_block, $view, $context)
+    {
+        try {
+            $this->render_html($ui_block->render($view, $context));
+        }
+        catch (\Mooc\UI\Errors\AccessDenied $ade) {
+            $this->html_error($ade->getMessage(), 401);
+        }
+        catch (\Mooc\UI\Errors\BadRequest $bre) {
+            $this->html_error($bre->getMessage(), 400);
+        }
+        catch (\Mooc\UI\Errors\NotFound $nfe) {
+            $this->html_error('Not Found', 404);
+        }
+        catch (Exception $e) {
+            $this->html_error($e->getMessage());
+        }
+    }
+
     private function callBlockHandler($ui_block, $handler, $data)
     {
         try {
@@ -194,19 +204,15 @@ class BlocksController extends MoocipController {
         }
         catch (\Mooc\UI\Errors\AccessDenied $ade) {
             $this->json_error('Access Denied', 401);
-            return;
         }
         catch (\Mooc\UI\Errors\BadRequest $bre) {
             $this->json_error($bre->getMessage(), 400);
-            return;
         }
         catch (\Mooc\UI\Errors\NotFound $nfe) {
             $this->json_error('Not Found', 404);
-            return;
         }
         catch (Exception $e) {
             $this->json_error($e->getMessage());
-            return;
         }
     }
 }

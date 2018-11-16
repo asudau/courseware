@@ -1,0 +1,30 @@
+{{^inactive}}
+    {{#link_id}}
+        <a href="{{#plugin_url}}courseware?selected={{link_id}}{{/plugin_url}}">
+            <div class="cw-link internal">
+                <span class="cw-link-title">{{link_title}}</span>
+                {{#link_show_progress}}
+                    {{#progress}}
+                        <div class="cw-link-progress-true"></div>
+                    {{/progress}}
+                    {{^progress}}
+                        <div class="cw-link-progress-false"></div>
+                    {{/progress}}
+                {{/link_show_progress}}
+            </div>
+        </a>
+    {{/link_id}}
+    
+    {{#link_href}}
+        <a href="{{link_href}}" target="_blank">
+            <div class="cw-link external">
+                <span class="cw-link-title">{{link_title}}</span>
+            </div>
+        </a>
+    {{/link_href}}
+{{/inactive}}
+{{#inactive}}
+    <div class="messagebox messagebox_info">
+        {{#i18n}}Dieser Block steht Ihnen erst zur Verfügung, sobald Sie die vorhergehenden Abschnitte erfolgreich abgeschloßen haben.{{/i18n}}
+    </div>
+{{/inactive}}

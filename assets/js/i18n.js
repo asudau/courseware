@@ -1,9 +1,3 @@
-define([], function () {
-
-    'use strict';
-
-    // dummy implementation for now
-    return function (string) {
-        return string;
-    };
-});
+export default function (string) {
+  return string.toLocaleString();
+}

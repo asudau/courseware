@@ -13,19 +13,30 @@ use Mooc\UI\Section\Section;
 class ForumBlock extends Block
 {
     const NAME = 'Forum';
+    const BLOCK_CLASS = 'interaction';
+    const DESCRIPTION = 'Zeigt den Inhalt eines Bereichs des Kernforums an';
 
     public function initialize()
     {
         $this->defineField('area_id', \Mooc\SCOPE_BLOCK, -1);
 
-        // check, if we lost our connected area
-        if ($this->area_id != -1 && !\ForumEntry::getConstraints($this->area_id)) {
-            $this->area_id = -1;
+        if (self::forumActivated($this)) {
+            // check, if we lost our connected area
+            if ($this->area_id != -1 && !\ForumEntry::getConstraints($this->area_id)) {
+                $this->area_id = -1;
+            }
         }
     }
 
     public function student_view()
     {
+        if (!$this->isAuthorized()) {
+            return array('inactive_block' => true);
+        }
+        if ($inactive = !self::forumActivated($this)) {
+            return compact('inactive');
+        }
+
         // on view: grade with 100%
         $this->setGrade(1.0);
 
@@ -50,6 +61,12 @@ class ForumBlock extends Block
 
     public function author_view()
     {
+        if ($inactive = !self::forumActivated($this)) {
+            return compact('inactive');
+        }
+
+        $this->authorizeUpdate();
+
         $areas = \ForumEntry::getList('area', $this->container['cid']);
 
         if ($this->area_id != -1) {
@@ -67,7 +84,11 @@ class ForumBlock extends Block
 
     private function connectToArea($area_id)
     {
-        if ($area_id == -1 || !\ForumEntry::getConstraints($area_id)) {
+        $old_area_id = $this->area_id;
+
+        $entry = \ForumEntry::getConstraints($area_id);
+
+        if ($area_id == -1 || !$entry) {
             // create new area and create default category if not present
             $seminar_id = $this->container['cid'];
             $user_id    = $this->container['current_user']->id;
@@ -99,9 +120,30 @@ class ForumBlock extends Block
                 'author_host' => getenv('REMOTE_ADDR')
             ), $seminar_id);
 
+            $entry = \ForumEntry::getConstraints($this->area_id);
+
             \ForumCat::addArea($category_id, $this->area_id);
         } else {
             $this->area_id = $area_id;
+        }
+
+        // add the backlink if neccessary
+        $selected = $this->_model->parent_id;
+
+        // if the current section is not added as a backlink yet, add it
+        if (strpos($entry['content'], '[mooc-forumblock:'. $selected .']') === false) {
+            $new_content = \ForumEntry::killEdit($entry['content']) . "\n". '[mooc-forumblock:'. $selected .']';
+            \ForumEntry::update($this->area_id, $entry['name'], $new_content);
+        }
+
+        // remove old backlink from previously connected area
+        if ($old_area_id != -1) {
+            $old_entry = \ForumEntry::getConstraints($old_area_id);
+
+            if (strpos($old_entry['content'], '[mooc-forumblock:'. $selected .']') !== false) {
+                $new_content = str_replace('[mooc-forumblock:'. $selected .']', '', $old_entry['content']);
+                \ForumEntry::update($old_area_id, $old_entry['name'], $new_content);
+            }
         }
     }
 
@@ -116,18 +158,72 @@ class ForumBlock extends Block
             }
             $path[] = $parent->title;
         }
+
         return implode(' > ', array_reverse($path));
     }
 
     public function save_handler(array $data)
     {
-        if (!$this->getCurrentUser()->canUpdate($this->getModel())) {
-            throw new Errors\AccessDenied();
-        }
+        $this->authorizeUpdate();
 
         // store submitted connection
         $this->connectToArea($data['area_id']);
 
         return array();
+    }
+
+    /* * * * * * * * * * * * * * * *
+     * *   I M - / E X P O R T   * *
+     * * * * * * * * * * * * * * * */
+
+    /**
+     * {@inheritdoc}
+     */
+    public function exportProperties()
+    {
+        return array('areaid' => $this->area_id);
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getXmlNamespace()
+    {
+        return 'http://moocip.de/schema/block/forum/';
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function getXmlSchemaLocation()
+    {
+        return 'http://moocip.de/schema/block/forum/forum-1.0.xsd';
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function importProperties(array $properties)
+    {
+        if (isset($properties['areaid'])) {
+            $this->area_id = md5($properties['areaid'] . $this->container['cid']);
+            $this->connectToArea($this->area_id);
+        }
+
+        $this->save();
+    }
+
+    /**
+     * Check if the forum is activated in the selected course
+     *
+     * @param type $block
+     * @return type
+     */
+    private static function forumActivated($block)
+    {
+        $plugin_manager = \PluginManager::getInstance();
+        $plugin_info = $plugin_manager->getPluginInfo('CoreForum');
+
+        return $plugin_manager->isPluginActivated($plugin_info['id'], $block->getModel()->seminar_id);
     }
 }
