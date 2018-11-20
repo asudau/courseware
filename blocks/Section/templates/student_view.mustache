@@ -1,0 +1,21 @@
+{{^inactive}}
+  {{> title}}
+
+  {{#blocks}}
+    {{> block_wrapper}}
+  {{/blocks}}
+
+  <div class=no-content>
+    <p>{{#i18n}}Keine Inhaltsblöcke{{/i18n}}</p>
+  </div>
+
+  <section class="block-adder" style="border: solid thin #ccc; padding: 0; margin:0;">
+    {{> block_types_view}}
+  </section>
+{{/inactive}}
+
+{{#inactive}}
+<div class="messagebox messagebox_info">
+    {{#i18n}}Dieser Abschnitt steht Ihnen erst zur Verfügung, sobald Sie die vorhergehenden Abschnitte erfolgreich abgeschloßen haben.{{/i18n}}
+</div>
+{{/inactive}}

@@ -1,0 +1,27 @@
+<li class="subchapter{{#selected}} selected{{/selected}}{{#unpublished}} unpublished{{/unpublished}}"
+  data-blockid="{{id}}"
+  data-title="{{title}}"
+  data-publication="{{publication_date}}"
+  data-type=Subchapter
+  {{#dom_title}}title="{{visible_since_title}} {{dom_title}}"{{/dom_title}}>
+
+  {{> subchapter_title}}
+  
+    {{#sections_as_chapters}}
+        {{#selected}}
+            <ol class="sections">
+            
+              {{#sections}}
+                {{> section}}
+              {{/sections}}
+            
+              <div class="clear"></div>
+              <li class=no-content></li>
+              <li class=controls>
+                <button class=add-section>{{#i18n}}Abschnitt einfügen{{/i18n}}</button>
+              </li>
+            </ol>
+        {{/selected}}
+    {{/sections_as_chapters}}
+
+</li>

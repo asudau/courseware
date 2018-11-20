@@ -1,0 +1,10 @@
+<ul>
+  {{#answers}}
+    <li>
+      <input type="radio" name="{{name}}" value="{{index}}" id="answer_{{index}}">
+      <label for="answer_{{index}}">
+        {{{text}}}
+      </label>
+    </li>
+  {{/answers}}
+</ul>

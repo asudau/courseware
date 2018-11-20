@@ -1,0 +1,98 @@
+@import '../../../assets/less/mixins';
+
+.AudioBlock {
+    border: solid thin #d8d8d8;
+    padding: 10px;
+}
+
+.cw-audio-description {
+    padding-bottom: 1em;
+}
+
+.cw-audio-controls {
+    text-align: right;
+}
+
+.cw-audio-range {
+    margin: 0 5px 10px 0;
+    &.ui-widget-content {
+        background-color: #24437C;
+    }
+
+    .ui-widget-header {
+        background-color: #fdfdfd;
+    }
+
+    .ui-slider-handle {
+        border-radius: 20px;
+        width: 1.8em;
+        height: 1.8em;
+        top: -0.5em;
+        background-color: #ddd;
+        border-color: #ccc;
+        cursor: pointer;
+        margin-left: -3px;
+    }
+}
+
+.cw-audio-playbutton, .cw-audio-stopbutton {
+    .courseware-btn;
+    min-width: unset;
+    margin: 5px;
+    height: 46px;
+    width: 46px;
+    background-position: 6px center;
+    display: inline-block;
+}
+
+.cw-audio-playbutton {
+    .assets-bg-icon("blue/play.svg");
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: 28px;
+    
+    &:hover {
+        .assets-bg-icon("white/play.svg");
+    }
+}
+
+.cw-audio-stopbutton {
+    .assets-bg-icon("blue/stop.svg");
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: 24px;
+    
+    &:hover {
+        .assets-bg-icon("white/stop.svg");
+    }
+}
+
+
+.cw-audio-playbutton-playing {
+    .assets-bg-icon("blue/pause.svg");
+    background-position: center center;
+    background-repeat: no-repeat;
+    background-size: 24px;
+    
+    &:hover {
+        .assets-bg-icon("white/pause.svg");
+    }
+}
+
+.cw-audio-time {
+    position: relative;
+    top: -1em;
+    color: #333;
+}
+
+section#courseware .block-content:not([data-view="student"]) {
+    select.cw-audioblock-source {
+        width: 14em; 
+        margin-right:1.75em;
+    }
+
+    label.cw-audioblock-description-label {
+        padding-left: 1.75em
+    }
+}
+

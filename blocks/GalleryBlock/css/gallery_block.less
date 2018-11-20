@@ -1,0 +1,54 @@
+@import '../../../assets/less/variables';
+@import '../../../assets/less/mixins';
+@import '../../../node_modules/slick-carousel/slick/slick.less';
+
+.slick-prev.slick-arrow,
+.slick-next.slick-arrow {
+    color: transparent;
+    width: 35px;
+    height: 35px;
+    background-color: #bbb;
+    background-size: 20px;
+    border-radius: 2px;
+    background-size: 24px;
+    background-position: 50%;
+    background-repeat: no-repeat;
+    border: none;
+    outline: none;
+    position: absolute;
+    top: 50%;
+    display: block;
+    z-index: 42;
+    margin-top: -10px;
+    padding: 0;
+    cursor: pointer;
+}
+
+.slick-prev.slick-arrow {
+    .assets-bg-icon("white/arr_1left.svg");
+    background-color: rgba(0,0,0,0.4);
+}
+
+.slick-next.slick-arrow {
+    .assets-bg-icon("white/arr_1right.svg");
+    background-color: rgba(0,0,0,0.4);
+    right: 0;
+}
+
+.slick-list.draggable {
+    margin: 30px auto 50px;
+    max-width: 100%;
+    .slick-slide img {
+        max-width: 100%;
+    }
+}
+
+.cw-gallery {
+    img {
+        margin: auto;
+    }
+}
+.view-student .cw-sidebar .GalleryBlock {
+    border: none !important;
+
+}
