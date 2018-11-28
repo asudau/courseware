@@ -45,7 +45,7 @@ export default {
 
     const newLocationURL = new URL(location.href, true)
     newLocationURL.set('query', params)
-    newLocationURL.set('hash', `#${hash}`)
+    newLocationURL.set('hash', '#'+hash)
 
     let newLocation = newLocationURL.toString()
 
